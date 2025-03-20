@@ -78,7 +78,13 @@ app.get('/verifyJob', async (req, res) => {
    res.send(result)
 })
 
-
+//Verified job get a single id
+app.get('/verifyJob/:id', async (req, res) => {
+   const id = req.params.id
+   const query = { _id: new ObjectId(id) }
+   const result = await jobCollection.findOne(query)
+   res.send(result)
+})
 
 
 app.get('/', (req, res) => {
