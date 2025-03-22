@@ -17,6 +17,7 @@ const client = new MongoClient(uri, {
 const userCollection = client.db('ai-Job').collection('allUser')
 const pendingCollection = client.db('ai-Job').collection('allPendingJob')
 const jobCollection = client.db('ai-Job').collection('allJob')
+const saveJobCollection = client.db('ai-Job').collection('saveJob')
 
 async function connectDB() {
   try {
@@ -32,4 +33,4 @@ async function connectDB() {
 }
 // run().catch(console.dir);
 
-module.exports = { connectDB, jobCollection, userCollection, pendingCollection }
+module.exports = { connectDB, jobCollection, userCollection, pendingCollection,saveJobCollection }
