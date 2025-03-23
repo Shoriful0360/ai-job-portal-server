@@ -85,7 +85,14 @@ app.get('/verifyJob/:id', async (req, res) => {
    const result = await jobCollection.findOne(query)
    res.send(result)
 })
-// get 
+//Verified job get a Employer email
+app.get('/all/verifyJob/:email', async (req, res) => {
+   const email = req.params.email
+   const query = { email }
+   const result = await jobCollection.find(query).toArray()
+   res.send(result)
+})
+// get Specific category ways jobs
 app.get('/verifiedCategoryJob/:category', async (req, res) => {
    const category = req.params.category
    const id = req.query.id
@@ -131,6 +138,19 @@ app.get('/applyJob/:email', async (req, res) => {
    const email = req.params.email
    const query = { jobSeekerEmail: email }
    const result = await applyJobCollection.find(query).toArray()
+   res.send(result)
+})
+//Job Seeker Apply any job and applyCount update 
+app.patch('/updateApplyCount/:id', async (req, res) => {
+   const id = req.params.id
+   console.log(id)
+   const filter = { _id: id}
+   const update = {
+      $inc: {
+         applyCandidate: 1
+      }
+   }
+   const result = await jobCollection.updateOne(filter, update)
    res.send(result)
 })
 app.get('/', (req, res) => {
