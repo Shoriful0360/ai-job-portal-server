@@ -13,17 +13,79 @@ app.use(express.json())
 
 
 //create User
-app.post('/user/:email', async (req, res) => {
-   const user = req.body
-   const email = req.params.email
-   const query = { email }
-   const isExist = await userCollection.findOne(query)
-   if (isExist) {
-      return res.send(isExist)
+app.post('/register', async (req, res) => {
+   const {email,password} = req.body;
+   const existingUser=await userCollection.findOne({email});
+   if(existingUser){
+      return res.status(400).json({message:"Email already exists"})
    }
-   const result = await userCollection.insertOne(user)
+   const hashedPassword=await bcrypt.hash(password,10)
+   const result=await userCollection.insertOne({
+      email,
+      password:hashedPassword,
+      loginAttempts: 0,          // Initial login attempts counter
+      lockUntil: null,
+   })
    res.send(result)
+ 
 })
+
+// block user when enter wrong password
+
+app.post('/wrong-password', async (req, res) => {
+   const { email, password } = req.body;
+   const user = await userCollection.findOne({ email });
+
+   // User না থাকলে
+   if (!user) {
+       return res.status(403).json({ message: 'User not found' });
+   }
+
+   // যদি account lock করা থাকে
+   if (user.lockUntil && user.lockUntil > Date.now()) {
+       return res.status(403).json({
+           message: `Your account is locked. Try again after ${new Date(user.lockUntil).toLocaleString()}`
+       });
+   }
+
+   // Password মিলছে কি না চেক
+   const isMatch = await bcrypt.compare(password, user.password);
+  
+
+
+   if (isMatch) {
+       // সফল login হলে loginAttempts reset হবে
+       await userCollection.updateOne({ email }, {
+           $set: {
+               loginAttempts: 0,
+               lockUntil: null
+           }
+       });
+
+       // ✅ এখানেই response success
+       return res.status(200).send({ message: 'login successful' });
+   } else {
+       // ভুল password, loginAttempts বাড়াও
+       let updateQuery = { $inc: { loginAttempts: 1 } };
+
+       if (user.loginAttempts >= 2) {
+           updateQuery.$set = { lockUntil: Date.now() + 60 * 60 * 1000 }; // 1 ঘণ্টার জন্য block
+       }
+
+       await userCollection.updateOne({ email }, updateQuery);
+
+       if (user.loginAttempts >= 2) {
+           return res.status(403).json({
+               message: "Too many failed attempts. Account is locked for 1 hour."
+           });
+       } else {
+           return res.status(401).json({ message: 'Wrong password' });
+       }
+   }
+});
+
+
+
 
 //New job post in Pending job Collection
 app.post('/pendingJob', async (req, res) => {
@@ -128,7 +190,7 @@ app.get('/verifyJob', async (req, res) => {
    const result = await jobCollection.find(query).toArray()
    res.send(result)
 })
-
+7
 //Verified job get a single id
 app.get('/verifyJob/:id', async (req, res) => {
    const id = req.params.id
@@ -212,6 +274,13 @@ app.get('/saveJob/:email', async (req, res) => {
    res.send(result)
 })
 
+// category job
+app.get('/category-job/:title',async(req,res)=>{
+   const {title}=req.params;
+   const query={category: title};
+   const result=await jobCollection.find(query).toArray()
+   res.send(result)
+})
 //Apply Job Post API
 app.post('/applyJob/:email', async (req, res) => {
    const data = req.body

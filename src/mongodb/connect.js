@@ -21,6 +21,7 @@ const jobCollection = client.db('ai-Job').collection('allJob')
 const saveJobCollection = client.db('ai-Job').collection('saveJob')
 const applyJobCollection = client.db('ai-Job').collection('applyJob')
 
+
 async function connectDB() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
