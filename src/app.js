@@ -3,7 +3,7 @@ require("dotenv").config(); //must be include all file
 const express = require("express");
 const cors = require("cors");
 const bcrypt=require("bcryptjs")
-const { jobCollection, userCollection, pendingCollection, saveJobCollection } = require("./mongodb/connect");
+const { jobCollection, userCollection, pendingCollection, saveJobCollection, applyJobCollection } = require("./mongodb/connect");
 const { ObjectId } = require("mongodb");
 const app = express()
 
@@ -135,7 +135,7 @@ app.post('/verifyJob', async (req, res) => {
    const result = await jobCollection.insertOne(data)
    res.send(result)
 })
-//get verify job
+//get all verified job
 app.get('/verifyJob', async (req, res) => {
    const result = await jobCollection.find().toArray()
    res.send(result)
@@ -148,12 +148,27 @@ app.get('/verifyJob/:id', async (req, res) => {
    const result = await jobCollection.findOne(query)
    res.send(result)
 })
-// save data post api
+//Verified job get a Employer email
+app.get('/all/verifyJob/:email', async (req, res) => {
+   const email = req.params.email
+   const query = { email }
+   const result = await jobCollection.find(query).toArray()
+   res.send(result)
+})
+// get Specific category ways jobs
+app.get('/verifiedCategoryJob/:category', async (req, res) => {
+   const category = req.params.category
+   const id = req.query.id
+   const query = { category, _id: { $ne: id } }
+   const result = await jobCollection.find(query).toArray()
+   res.send(result)
+})
+// save Job post api
 app.post('/saveJob/:email', async (req, res) => {
    const data = req.body
    const email = req.params.email
    const jobId = req.query.jobId
-   const query = { jobSeekerEmail: email , jobId: jobId }
+   const query = { jobSeekerEmail: email, jobId: jobId }
    const isExist = await saveJobCollection.findOne(query)
    if (isExist) {
       return res.send('This Job All Ready Save Your Wishlist')
@@ -164,7 +179,7 @@ app.post('/saveJob/:email', async (req, res) => {
 // Save job data get user email
 app.get('/saveJob/:email', async (req, res) => {
    const email = req.params.email
-   const query = {jobSeekerEmail: email}
+   const query = { jobSeekerEmail: email }
    const result = await saveJobCollection.find(query).toArray()
    res.send(result)
 })
@@ -176,10 +191,42 @@ app.get('/category-job/:title',async(req,res)=>{
    const result=await jobCollection.find(query).toArray()
    res.send(result)
 })
+//Apply Job Post API
+app.post('/applyJob/:email', async (req, res) => {
+   const data = req.body
+   const email = req.params.email
+   const jobId = req.query.jobId
+   const query = { jobSeekerEmail: email, jobId: jobId }
+   const isExist = await applyJobCollection.findOne(query)
+   if (isExist) {
+      return res.send('This Job All Ready Save Your Wishlist')
+   }
+   const result = await applyJobCollection.insertOne(data)
+   res.send(result)
+})
+// Get All Apply Job A Specific Job Seeker email
+app.get('/applyJob/:email', async (req, res) => {
+   const email = req.params.email
+   const query = { jobSeekerEmail: email }
+   const result = await applyJobCollection.find(query).toArray()
+   res.send(result)
+})
+//Job Seeker Apply any job and applyCount update 
+app.patch('/updateApplyCount/:id', async (req, res) => {
+   const id = req.params.id
+   console.log(id)
+   const filter = { _id: id}
+   const update = {
+      $inc: {
+         applyCandidate: 1
+      }
+   }
+   const result = await jobCollection.updateOne(filter, update)
+   res.send(result)
+})
 app.get('/', (req, res) => {
    res.send('server is running on jobportal ai')
 })
-
 
 
 
