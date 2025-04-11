@@ -49,6 +49,8 @@ app.post('/wrong-password', async (req, res) => {
 
    // Password মিলছে কি না চেক
    const isMatch = await bcrypt.compare(password, user.password);
+  
+
 
    if (isMatch) {
        // সফল login হলে loginAttempts reset হবে
@@ -60,7 +62,7 @@ app.post('/wrong-password', async (req, res) => {
        });
 
        // ✅ এখানেই response success
-       return res.send({ message: 'login successful' });
+       return res.status(200).send({ message: 'login successful' });
    } else {
        // ভুল password, loginAttempts বাড়াও
        let updateQuery = { $inc: { loginAttempts: 1 } };
