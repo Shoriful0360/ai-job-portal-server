@@ -137,7 +137,17 @@ app.post('/verifyJob', async (req, res) => {
 })
 //get all verified job
 app.get('/verifyJob', async (req, res) => {
-   const result = await jobCollection.find().toArray()
+   const division = req.query.division
+   const jobType = req.query.jobType
+   const search = req.query.search || ''
+   let query = {
+      title: {
+         $regex: search, $options: 'i'
+      }
+   }
+   if (division) query.division = division
+   if (jobType) query.jobType = jobType
+   const result = await jobCollection.find(query).toArray()
    res.send(result)
 })
 7
@@ -161,6 +171,46 @@ app.get('/verifiedCategoryJob/:category', async (req, res) => {
    const id = req.query.id
    const query = { category, _id: { $ne: id } }
    const result = await jobCollection.find(query).toArray()
+   res.send(result)
+})
+//delete job api
+app.delete('/deleteJob/:id', async (req, res) => {
+   const id = req.params.id
+   const query = { _id: id }
+   const result = await jobCollection.deleteOne(query)
+   res.send(result)
+})
+//Update job ApI
+app.put('/updateJob/:id', async (req, res) => {
+   const id = req.params.id
+   const data = req.body
+   const filter = { _id: id }
+   const UpdateInfo = {
+      $set: {
+         applyCandidate: data.applyCandidate,
+         category: data.category,
+         deadline: data.deadline,
+         description: data.description,
+         email: data.email,
+         experience: data.experience,
+         image: data.image,
+         jobPostTime: data.jobPostTime,
+         jobTime: data.jobTime,
+         jobType: data.jobType,
+         location: data.location,
+         maxSalary: data.maxSalary,
+         minSalary: data.minSalary,
+         name: data.name,
+         requirement: data.requirement,
+         skill: data.skill,
+         status: data.status,
+         title: data.title,
+         educationLevel: data.educationLevel
+
+
+      }
+   }
+   const result = await jobCollection.updateOne(filter, UpdateInfo)
    res.send(result)
 })
 // save Job post api
@@ -215,7 +265,7 @@ app.get('/applyJob/:email', async (req, res) => {
 app.patch('/updateApplyCount/:id', async (req, res) => {
    const id = req.params.id
    console.log(id)
-   const filter = { _id: id}
+   const filter = { _id: id }
    const update = {
       $inc: {
          applyCandidate: 1
