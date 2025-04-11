@@ -1,7 +1,7 @@
-
 require("dotenv").config(); //must be include all file
 const express = require("express");
 const cors = require("cors");
+const bcrypt=require("bcryptjs")
 const { jobCollection, userCollection, pendingCollection, saveJobCollection, applyJobCollection } = require("./mongodb/connect");
 const { ObjectId } = require("mongodb");
 const app = express()
@@ -9,6 +9,8 @@ const app = express()
 //  middleware
 app.use(cors())
 app.use(express.json())
+
+
 
 //create User
 app.post('/user/:email', async (req, res) => {
@@ -69,7 +71,46 @@ app.patch('/acceptJob/:id', async (req, res) => {
 //Verified job post in jobCollection
 app.post('/verifyJob', async (req, res) => {
    const data = req.body
+   const { skill } = req.body
    const result = await jobCollection.insertOne(data)
+   const skillData = await index.upsert
+      ([{
+         id: result.insertedId.toString(),
+         values: simpleVector(skill),
+         metadata: { skills: skill }
+      }])
+   res.send(result)
+})
+
+// // get all verified job using AI
+// app.get('/Ai/JobData', async (req, res) => {
+//    const skills  = req.query.skill || 0
+//    const skill  = JSON.parse(skills)
+//    console.log(skill)
+//    console.log(typeof(skill))
+//    const userVector = simpleVector(skill)
+//    console.log(userVector)
+//    const queryResult = await index.query({
+//       vector: userVector,
+//       topK: 5,
+//       includeMetadata: false
+//    })
+//    console.log(queryResult)
+//    const jobIds = queryResult.matches.map((match) =>match.id)
+//    console.log(jobIds)
+//    const result = await jobCollection.find({ _id: { $in: jobIds } }).toArray()
+//    console.log(result)
+//    res.send(result)
+// })
+
+// get all verified job using AI
+app.get('/Ai/JobData', async (req, res) => {
+   const skills  = req.query.skill || []
+   const skill  = JSON.parse(skills)
+   console.log(skill)
+   console.log(typeof(skill))
+   const result = await jobCollection.find({ skill: { $in: skill } }).toArray()
+   console.log(result)
    res.send(result)
 })
 //get all verified job

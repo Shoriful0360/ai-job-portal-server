@@ -1,17 +1,18 @@
-require("dotenv").config(); //must be include all file
-
-
+require('dotenv').config()
 const { MongoClient, ServerApiVersion } = require('mongodb');
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.onkli.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
-  serverApi: {
+  serverApi:   {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
   }
 });
+
+
 
 // create collection list and then export
 const userCollection = client.db('ai-Job').collection('allUser')
