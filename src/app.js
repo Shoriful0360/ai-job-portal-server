@@ -11,23 +11,43 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
-//create User
+// CRUD operation
+
+app.get('/user-info/role/:email',async(req,res)=>{
+   const email=req.params.email;
+   const query={email}
+   const result=await userCollection.findOne(query)
+   res.send(result)
+})
+
 app.post('/register', async (req, res) => {
-   const {email,password} = req.body;
-   const existingUser=await userCollection.findOne({email});
+   const userData = req.body;
+   const existingUser=await userCollection.findOne({email:userData?.email});
    if(existingUser){
       return res.status(400).json({message:"Email already exists"})
    }
-   const hashedPassword=await bcrypt.hash(password,10)
-   const result=await userCollection.insertOne({
-      email,
-      password:hashedPassword,
-      loginAttempts: 0,          // Initial login attempts counter
-      lockUntil: null,
-   })
-   res.send(result)
+
+
+   if(userData.password){
+      const hashedPassword=await bcrypt.hash(userData.password,10)
+      const result=await userCollection.insertOne({
+         ...userData,
+           password:hashedPassword,
+           loginAttempts: 0,          // Initial login attempts counter
+           lockUntil: null,
+        })
+       return  res.send(result)
+   }else{
+      const result=await userCollection.insertOne({
+         ...userData,
+        })
+        res.send(result)
+   }
+  
  
 })
+
+
 
 // block user when enter wrong password
 
