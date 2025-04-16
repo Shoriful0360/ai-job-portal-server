@@ -11,43 +11,15 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
+// CRUD operation
 
-// // rabbani vai code 
-// app.post('/user/:email', async (req, res) => {
-//    const user = req.body;
-//    const email = req.params.email;
-//    const query = { email };
+app.get('/user-info/role/:email',async(req,res)=>{
+   const email=req.params.email;
+   const query={email}
+   const result=await userCollection.findOne(query)
+   res.send(result)
+})
 
-//    // Check if user already exists
-//    const isExist = await userCollection.findOne(query);
-//    if (isExist) {
-//        return res.send(isExist); // If user exists, return existing user
-//    }
-
-//    // Prepare the user data based on role
-//    const newUser = {
-//        name: user.name,
-//        email: user.email,
-//        role: user.role,
-//        photoURL: user.photoURL || "",
-//    };
-
-//    // If Employer, include company information
-//    if (user.role === "Employer") {
-//        newUser.companyName = user.companyName || "";
-//        newUser.companyDetails = user.companyDetails || "";
-//    }
-
-//    try {
-//        // Insert new user into collection
-//        const result = await userCollection.insertOne(newUser);
-//        res.send(result);
-//    } catch (error) {
-//        console.error("Error inserting user:", error);
-//        res.status(500).send({ error: true, message: "Server error while creating user" });
-//    }
-// });
-//create User
 app.post('/register', async (req, res) => {
    const userData = req.body;
    const existingUser=await userCollection.findOne({email:userData?.email});
