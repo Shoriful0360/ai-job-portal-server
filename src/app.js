@@ -10,26 +10,57 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
-
-
-//create User
-app.post('/register', async (req, res) => {
-   const { email, password } = req.body;
-   const existingUser = await userCollection.findOne({ email });
+app.get("/user-info/role/:email", async (req, res) => {
+   const email = req.params.email;
+   const query = { email };
+   const result = await userCollection.findOne(query);
+   res.send(result);
+ });
+ 
+app.post("/register", async (req, res) => {
+   const userData = req.body;
+   const existingUser = await userCollection.findOne({ email: userData?.email });
+ 
    if (existingUser) {
-      return res.status(400).json({ message: "Email already exists" })
+     return res.status(400).json({ message: "Email already exists" });
    }
-   const hashedPassword = await bcrypt.hash(password, 10)
-   const result = await userCollection.insertOne({
-      email,
-      password: hashedPassword,
-      loginAttempts: 0,          // Initial login attempts counter
-      lockUntil: null,
-   })
-   res.send(result)
-
-})
-
+ 
+   if (userData.password) {
+     const hashedPassword = await bcrypt.hash(userData.password, 10);
+     const result = await userCollection.insertOne({
+       ...userData,
+       password: hashedPassword,
+       loginAttempts: 0,
+       lockUntil: null,
+     });
+     return res.send(result);
+   } else {
+     const result = await userCollection.insertOne(userData);
+     res.send(result);
+   }
+ });
+app.patch("/users/:id/role", async (req, res) => {
+   const id = req.params.id;
+   const { role } = req.body;
+   try {
+     const result = await userCollection.updateOne(
+       { _id: new ObjectId(id) },
+       { $set: { role } }
+     );
+     res.send(result);
+   } catch (error) {
+     res.status(500).json({ message: "Failed to update role", error });
+   }
+ });
+app.delete("/users/:id", async (req, res) => {
+   const id = req.params.id;
+   try {
+     const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
+     res.send(result);
+   } catch (error) {
+     res.status(500).json({ message: "Failed to delete user", error });
+   }
+ });
 // block user when enter wrong password
 
 app.post('/wrong-password', async (req, res) => {
