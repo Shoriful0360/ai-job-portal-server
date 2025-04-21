@@ -1,8 +1,8 @@
 require("dotenv").config(); //must be include all file
 const express = require("express");
 const cors = require("cors");
-const bcrypt=require("bcryptjs")
-const { jobCollection, userCollection, pendingCollection, saveJobCollection, applyJobCollection } = require("./mongodb/connect");
+const bcrypt = require("bcryptjs")
+const { jobCollection, userCollection, pendingCollection, saveJobCollection, applyJobCollection, pendingReviewCollection, contactCollection, verifiedReviewCollection } = require("./mongodb/connect");
 const { ObjectId } = require("mongodb");
 const app = express()
 
@@ -10,42 +10,48 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
-// CRUD operation
-
-app.get('/user-info/role/:email',async(req,res)=>{
-   const email=req.params.email;
-   const query={email}
-   const result=await userCollection.findOne(query)
-   res.send(result)
-})
-
-app.post('/register', async (req, res) => {
-   const userData = req.body;
-   const existingUser=await userCollection.findOne({email:userData?.email});
-   if(existingUser){
-      return res.status(400).json({message:"Email already exists"})
-   }
-
-
-   if(userData.password){
-      const hashedPassword=await bcrypt.hash(userData.password,10)
-      const result=await userCollection.insertOne({
-         ...userData,
-           password:hashedPassword,
-           loginAttempts: 0,          // Initial login attempts counter
-           lockUntil: null,
-        })
-       return  res.send(result)
-   }else{
-      const result=await userCollection.insertOne({
-         ...userData,
-        })
-        res.send(result)
-   }
-  
+app.get("/user-info/role/:email", async (req, res) => {
+   const email = req.params.email;
+   const query = { email };
+   const result = await userCollection.findOne(query);
+   res.send(result);
+ });
  
-})
-
+app.post("/register", async (req, res) => {
+   const userData = req.body;
+   const existingUser = await userCollection.findOne({ email: userData?.email });
+ 
+   if (existingUser) {
+     return res.status(400).json({ message: "Email already exists" });
+   }
+ 
+   if (userData.password) {
+     const hashedPassword = await bcrypt.hash(userData.password, 10);
+     const result = await userCollection.insertOne({
+       ...userData,
+       password: hashedPassword,
+       loginAttempts: 0,
+       lockUntil: null,
+     });
+     return res.send(result);
+   } else {
+     const result = await userCollection.insertOne(userData);
+     res.send(result);
+   }
+ });
+app.patch("/users/:id/role", async (req, res) => {
+   const id = req.params.id;
+   const { role } = req.body;
+   try {
+     const result = await userCollection.updateOne(
+       { _id: new ObjectId(id) },
+       { $set: { role } }
+     );
+     res.send(result);
+   } catch (error) {
+     res.status(500).json({ message: "Failed to update role", error });
+   }
+ });
 app.delete("/users/:id", async (req, res) => {
    const id = req.params.id;
    try {
@@ -55,7 +61,6 @@ app.delete("/users/:id", async (req, res) => {
      res.status(500).json({ message: "Failed to delete user", error });
    }
  });
-
 // block user when enter wrong password
 
 app.post('/wrong-password', async (req, res) => {
@@ -64,49 +69,49 @@ app.post('/wrong-password', async (req, res) => {
 
    // User না থাকলে
    if (!user) {
-       return res.status(403).json({ message: 'User not found' });
+      return res.status(403).json({ message: 'User not found' });
    }
 
    // যদি account lock করা থাকে
    if (user.lockUntil && user.lockUntil > Date.now()) {
-       return res.status(403).json({
-           message: `Your account is locked. Try again after ${new Date(user.lockUntil).toLocaleString()}`
-       });
+      return res.status(403).json({
+         message: `Your account is locked. Try again after ${new Date(user.lockUntil).toLocaleString()}`
+      });
    }
 
    // Password মিলছে কি না চেক
    const isMatch = await bcrypt.compare(password, user.password);
-  
+
 
 
    if (isMatch) {
-       // সফল login হলে loginAttempts reset হবে
-       await userCollection.updateOne({ email }, {
-           $set: {
-               loginAttempts: 0,
-               lockUntil: null
-           }
-       });
+      // সফল login হলে loginAttempts reset হবে
+      await userCollection.updateOne({ email }, {
+         $set: {
+            loginAttempts: 0,
+            lockUntil: null
+         }
+      });
 
-       // ✅ এখানেই response success
-       return res.status(200).send({ message: 'login successful' });
+      // ✅ এখানেই response success
+      return res.status(200).send({ message: 'login successful' });
    } else {
-       // ভুল password, loginAttempts বাড়াও
-       let updateQuery = { $inc: { loginAttempts: 1 } };
+      // ভুল password, loginAttempts বাড়াও
+      let updateQuery = { $inc: { loginAttempts: 1 } };
 
-       if (user.loginAttempts >= 2) {
-           updateQuery.$set = { lockUntil: Date.now() + 60 * 60 * 1000 }; // 1 ঘণ্টার জন্য block
-       }
+      if (user.loginAttempts >= 2) {
+         updateQuery.$set = { lockUntil: Date.now() + 60 * 60 * 1000 }; // 1 ঘণ্টার জন্য block
+      }
 
-       await userCollection.updateOne({ email }, updateQuery);
+      await userCollection.updateOne({ email }, updateQuery);
 
-       if (user.loginAttempts >= 2) {
-           return res.status(403).json({
-               message: "Too many failed attempts. Account is locked for 1 hour."
-           });
-       } else {
-           return res.status(401).json({ message: 'Wrong password' });
-       }
+      if (user.loginAttempts >= 2) {
+         return res.status(403).json({
+            message: "Too many failed attempts. Account is locked for 1 hour."
+         });
+      } else {
+         return res.status(401).json({ message: 'Wrong password' });
+      }
    }
 });
 
@@ -155,50 +160,18 @@ app.patch('/acceptJob/:id', async (req, res) => {
    const result = await pendingCollection.updateOne(filter, updateData)
    res.send(result)
 })
-
 //Verified job post in jobCollection
 app.post('/verifyJob', async (req, res) => {
    const data = req.body
-   const { skill } = req.body
    const result = await jobCollection.insertOne(data)
-   const skillData = await index.upsert
-      ([{
-         id: result.insertedId.toString(),
-         values: simpleVector(skill),
-         metadata: { skills: skill }
-      }])
    res.send(result)
 })
 
-// // get all verified job using AI
-// app.get('/Ai/JobData', async (req, res) => {
-//    const skills  = req.query.skill || 0
-//    const skill  = JSON.parse(skills)
-//    console.log(skill)
-//    console.log(typeof(skill))
-//    const userVector = simpleVector(skill)
-//    console.log(userVector)
-//    const queryResult = await index.query({
-//       vector: userVector,
-//       topK: 5,
-//       includeMetadata: false
-//    })
-//    console.log(queryResult)
-//    const jobIds = queryResult.matches.map((match) =>match.id)
-//    console.log(jobIds)
-//    const result = await jobCollection.find({ _id: { $in: jobIds } }).toArray()
-//    console.log(result)
-//    res.send(result)
-// })
-
 // get all verified job using AI
 app.get('/Ai/JobData', async (req, res) => {
-   const skills  = req.query.skill || []
-   const skill  = JSON.parse(skills)
-   console.log(skill)
-   console.log(typeof(skill))
+   const skills = req.query.skill || []
+   const skill = JSON.parse(skills)
    const result = await jobCollection.find({ skill: { $in: skill } }).toArray()
-   console.log(result)
    res.send(result)
 })
 //get all verified job
@@ -301,10 +274,10 @@ app.get('/saveJob/:email', async (req, res) => {
 })
 
 // category job
-app.get('/category-job/:title',async(req,res)=>{
-   const {title}=req.params;
-   const query={category: title};
-   const result=await jobCollection.find(query).toArray()
+app.get('/category-job/:title', async (req, res) => {
+   const { title } = req.params;
+   const query = { category: title };
+   const result = await jobCollection.find(query).toArray()
    res.send(result)
 })
 //Apply Job Post API
@@ -327,10 +300,16 @@ app.get('/applyJob/:email', async (req, res) => {
    const result = await applyJobCollection.find(query).toArray()
    res.send(result)
 })
+// Get data A Specific Job Seeker apply id
+app.get('/single/Candidate/data/:id', async (req, res) => {
+   const id = req.params.id
+   const query = { _id: new ObjectId(id) }
+   const result = await applyJobCollection.findOne(query)
+   res.send(result)
+})
 //Job Seeker Apply any job and applyCount update 
 app.patch('/updateApplyCount/:id', async (req, res) => {
    const id = req.params.id
-   console.log(id)
    const filter = { _id: id }
    const update = {
       $inc: {
@@ -338,6 +317,120 @@ app.patch('/updateApplyCount/:id', async (req, res) => {
       }
    }
    const result = await jobCollection.updateOne(filter, update)
+   res.send(result)
+})
+
+//Specific job all candidates data get api
+app.get('/singleJob/all/Candidates/:id', async (req, res) => {
+   const id = req.params.id
+   const query = { jobId: id }
+   const result = await applyJobCollection.find(query).toArray()
+   res.send(result)
+})
+// Candidate Listed API
+app.patch('/listed/candidate/:id', async (req, res) => {
+   const id = req.params.id
+   const filter = { _id: new ObjectId(id) }
+   const update = {
+      $set: {
+         status: 'listed'
+      }
+   }
+   const result = await applyJobCollection.updateOne(filter, update)
+   res.send(result)
+})
+// Candidate Reject API
+app.patch('/reject/candidate/:id', async (req, res) => {
+   const id = req.params.id
+   const filter = { _id: new ObjectId(id) }
+   const update = {
+      $set: {
+         status: 'reject'
+      }
+   }
+   const result = await applyJobCollection.updateOne(filter, update)
+   res.send(result)
+})
+// Candidate Hired API
+app.patch('/hired/candidate/:id', async (req, res) => {
+   const id = req.params.id
+   const filter = { _id: new ObjectId(id) }
+   const update = {
+      $set: {
+         status: 'hired'
+      }
+   }
+   const result = await applyJobCollection.updateOne(filter, update)
+   res.send(result)
+})
+// Post pending contact API
+app.post('/contact/request', async (req, res) => {
+   const data = req.body
+   const result = await contactCollection.insertOne(data)
+   res.send(result)
+})
+// Get All Pending contact
+app.get('/contact/request', async (req, res) => {
+   const result = await contactCollection.find().toArray()
+   res.send(result)
+})
+// After Contact And delete this data
+app.delete('/delete/contact/request/:id', async (req, res) => {
+   const id = req.params.id
+   const query = { _id: new ObjectId(id) }
+   const result = await contactCollection.deleteOne(query)
+   res.send(result)
+})
+// Post pending Review API
+app.post('/pendingReview', async (req, res) => {
+   const data = req.body
+   const result = await pendingReviewCollection.insertOne(data)
+   res.send(result)
+})
+// Get All Pending Review 
+app.get('/pendingReview', async (req, res) => {
+   const result = await pendingReviewCollection.find().toArray()
+   res.send(result)
+})
+// Post verified Review API
+app.post('/verifiedReview', async (req, res) => {
+   const data = req.body
+   const result = await verifiedReviewCollection.insertOne(data)
+   res.send(result)
+})
+// Get All verified Review 
+app.get('/verifiedReview', async (req, res) => {
+   const result = await verifiedReviewCollection.find().toArray()
+   res.send(result)
+})
+// Update Review Status
+app.patch('/verified/review/status/:id', async (req, res) => {
+   const id = req.params.id
+   const filter = { _id: new ObjectId(id) }
+   const update = {
+      $set: {
+         status: 'verified'
+      }
+   }
+   const result = await verifiedReviewCollection.updateOne(filter, update)
+   res.send(result)
+})
+// Delete verified Review (email)
+app.delete('/review/delete/:email', async (req, res) => {
+   const email = req.params.email
+   const reviews = await verifiedReviewCollection.find({ email: email }).sort({ reviewTime: -1 }).toArray();
+   if (reviews.length > 1) {
+      const idsToDelete = reviews.slice(1).map(review => review._id);
+      const query = { _id: { $in: idsToDelete } }
+      const result = await verifiedReviewCollection.deleteMany(query)
+      res.send(result)
+   }
+})
+// Delete verified Review (id)
+app.delete('/single/review/delete/:id', async (req, res) => {
+   const id = req.params.id
+   const query = { _id: new ObjectId(id) }
+   const result = await pendingReviewCollection.deleteOne(query)
    res.send(result)
 })
 app.get('/', (req, res) => {

@@ -20,8 +20,9 @@ const pendingCollection = client.db('ai-Job').collection('allPendingJob')
 const jobCollection = client.db('ai-Job').collection('allJob')
 const saveJobCollection = client.db('ai-Job').collection('saveJob')
 const applyJobCollection = client.db('ai-Job').collection('applyJob')
-
-
+const pendingReviewCollection = client.db('ai-Job').collection('allPendingReview')
+const verifiedReviewCollection = client.db('ai-Job').collection('allVerifiedReview')
+const contactCollection = client.db('ai-Job').collection('contactRequest')
 async function connectDB() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
@@ -36,4 +37,4 @@ async function connectDB() {
 }
 // run().catch(console.dir);
 
-module.exports = { connectDB, jobCollection, userCollection, pendingCollection,saveJobCollection,applyJobCollection }
+module.exports = { connectDB, jobCollection, userCollection, pendingCollection,saveJobCollection,applyJobCollection,pendingReviewCollection,verifiedReviewCollection,contactCollection }
