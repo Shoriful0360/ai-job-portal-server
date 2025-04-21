@@ -10,27 +10,12 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
-<<<<<<< HEAD
-
-
-//create User
-app.post('/user/:email', async (req, res) => {
-   const user = req.body
-   const email = req.params.email
-   const query = { email }
-   const isExist = await userCollection.findOne(query)
-   if (isExist) {
-      return res.send(isExist)
-   }
-   const result = await userCollection.insertOne(user)
-=======
 // CRUD operation
 
 app.get('/user-info/role/:email',async(req,res)=>{
    const email=req.params.email;
    const query={email}
    const result=await userCollection.findOne(query)
->>>>>>> f44fb1eb33a1aa5201caae7daa0690a8690838c5
    res.send(result)
 })
 
@@ -61,7 +46,15 @@ app.post('/register', async (req, res) => {
  
 })
 
-
+app.delete("/users/:id", async (req, res) => {
+   const id = req.params.id;
+   try {
+     const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
+     res.send(result);
+   } catch (error) {
+     res.status(500).json({ message: "Failed to delete user", error });
+   }
+ });
 
 // block user when enter wrong password
 
