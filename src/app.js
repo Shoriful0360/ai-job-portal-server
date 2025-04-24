@@ -35,6 +35,50 @@ app.post('/update-user/:email',async(req,res)=>{
 res.send(result)
 })
 
+// update password
+// const bcrypt = require("bcrypt");
+
+app.put("/change-password/:email", async (req, res) => {
+  const { email } = req.params;
+  const { currentPassword, newPassword } = req.body;
+
+
+
+  try {
+    const user = await userCollection.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if(!user?.password){
+
+       return res.status(404).json({ error: "You cannot register with password" });
+    }
+
+    //  Compare current password with hashed one
+    const isPasswordCorrect = await bcrypt.compare(currentPassword, user?.password);
+    if (!isPasswordCorrect) {
+      return res.status(400).json({ error: "Your current password is incorrect" });
+    }
+
+    //  Hash the new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    //  Update password in MongoDB
+    const result = await userCollection.updateOne(
+      { email },
+      { $set: { password: hashedPassword } }
+    );
+
+    res.send({ message: "Password updated successfully", result });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
 // save skill 
 
 // POST /add-skill/:email
@@ -86,7 +130,7 @@ app.put("/update-skill/:email/:skillId",async(req,res)=>{
    res.send(result)
 })
 
-// delet skill
+// delete skill
 app.delete("/delete-skill/:email/:skillId",async(req,res)=>{
    const{email,skillId}=req.params;
    if(!email || !skillId){
