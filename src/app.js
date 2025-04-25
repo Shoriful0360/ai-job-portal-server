@@ -1,14 +1,8 @@
-require("dotenv").config(); // must be included in all files
+require("dotenv").config(); //must be include all file
 const express = require("express");
 const cors = require("cors");
-const bcrypt = require("bcryptjs");
-const {
-  jobCollection,
-  userCollection,
-  pendingCollection,
-  saveJobCollection,
-  applyJobCollection,
-} = require("./mongodb/connect");
+const bcrypt = require("bcryptjs")
+const { jobCollection, userCollection, pendingCollection, saveJobCollection, applyJobCollection, pendingReviewCollection, contactCollection, verifiedReviewCollection } = require("./mongodb/connect");
 const { ObjectId } = require("mongodb");
 const app = express();
 
@@ -188,6 +182,169 @@ app.post("/wrong-password", async (req, res) => {
     if (user.loginAttempts >= 2) {
       updateQuery.$set = { lockUntil: Date.now() + 60 * 60 * 1000 };
     }
+// category job
+app.get('/category-job/:title', async (req, res) => {
+   const { title } = req.params;
+   const query = { category: title };
+   const result = await jobCollection.find(query).toArray()
+   res.send(result)
+})
+//Apply Job Post API
+app.post('/applyJob/:email', async (req, res) => {
+   const data = req.body
+   const email = req.params.email
+   const jobId = req.query.jobId
+   const query = { jobSeekerEmail: email, jobId: jobId }
+   const isExist = await applyJobCollection.findOne(query)
+   if (isExist) {
+      return res.send('This Job All Ready Save Your Wishlist')
+   }
+   const result = await applyJobCollection.insertOne(data)
+   res.send(result)
+})
+// Get All Apply Job A Specific Job Seeker email
+app.get('/applyJob/:email', async (req, res) => {
+   const email = req.params.email
+   const query = { jobSeekerEmail: email }
+   const result = await applyJobCollection.find(query).toArray()
+   res.send(result)
+})
+// Get data A Specific Job Seeker apply id
+app.get('/single/Candidate/data/:id', async (req, res) => {
+   const id = req.params.id
+   const query = { _id: new ObjectId(id) }
+   const result = await applyJobCollection.findOne(query)
+   res.send(result)
+})
+//Job Seeker Apply any job and applyCount update 
+app.patch('/updateApplyCount/:id', async (req, res) => {
+   const id = req.params.id
+   const filter = { _id: id }
+   const update = {
+      $inc: {
+         applyCandidate: 1
+      }
+   }
+   const result = await jobCollection.updateOne(filter, update)
+   res.send(result)
+})
+
+//Specific job all candidates data get api
+app.get('/singleJob/all/Candidates/:id', async (req, res) => {
+   const id = req.params.id
+   const query = { jobId: id }
+   const result = await applyJobCollection.find(query).toArray()
+   res.send(result)
+})
+// Candidate Listed API
+app.patch('/listed/candidate/:id', async (req, res) => {
+   const id = req.params.id
+   const filter = { _id: new ObjectId(id) }
+   const update = {
+      $set: {
+         status: 'listed'
+      }
+   }
+   const result = await applyJobCollection.updateOne(filter, update)
+   res.send(result)
+})
+// Candidate Reject API
+app.patch('/reject/candidate/:id', async (req, res) => {
+   const id = req.params.id
+   const filter = { _id: new ObjectId(id) }
+   const update = {
+      $set: {
+         status: 'reject'
+      }
+   }
+   const result = await applyJobCollection.updateOne(filter, update)
+   res.send(result)
+})
+// Candidate Hired API
+app.patch('/hired/candidate/:id', async (req, res) => {
+   const id = req.params.id
+   const filter = { _id: new ObjectId(id) }
+   const update = {
+      $set: {
+         status: 'hired'
+      }
+   }
+   const result = await applyJobCollection.updateOne(filter, update)
+   res.send(result)
+})
+// Post pending contact API
+app.post('/contact/request', async (req, res) => {
+   const data = req.body
+   const result = await contactCollection.insertOne(data)
+   res.send(result)
+})
+// Get All Pending contact
+app.get('/contact/request', async (req, res) => {
+   const result = await contactCollection.find().toArray()
+   res.send(result)
+})
+// After Contact And delete this data
+app.delete('/delete/contact/request/:id', async (req, res) => {
+   const id = req.params.id
+   const query = { _id: new ObjectId(id) }
+   const result = await contactCollection.deleteOne(query)
+   res.send(result)
+})
+// Post pending Review API
+app.post('/pendingReview', async (req, res) => {
+   const data = req.body
+   const result = await pendingReviewCollection.insertOne(data)
+   res.send(result)
+})
+// Get All Pending Review 
+app.get('/pendingReview', async (req, res) => {
+   const result = await pendingReviewCollection.find().toArray()
+   res.send(result)
+})
+// Post verified Review API
+app.post('/verifiedReview', async (req, res) => {
+   const data = req.body
+   const result = await verifiedReviewCollection.insertOne(data)
+   res.send(result)
+})
+// Get All verified Review 
+app.get('/verifiedReview', async (req, res) => {
+   const result = await verifiedReviewCollection.find().toArray()
+   res.send(result)
+})
+// Update Review Status
+app.patch('/verified/review/status/:id', async (req, res) => {
+   const id = req.params.id
+   const filter = { _id: new ObjectId(id) }
+   const update = {
+      $set: {
+         status: 'verified'
+      }
+   }
+   const result = await verifiedReviewCollection.updateOne(filter, update)
+   res.send(result)
+})
+// Delete verified Review (email)
+app.delete('/review/delete/:email', async (req, res) => {
+   const email = req.params.email
+   const reviews = await verifiedReviewCollection.find({ email: email }).sort({ reviewTime: -1 }).toArray();
+   if (reviews.length > 1) {
+      const idsToDelete = reviews.slice(1).map(review => review._id);
+      const query = { _id: { $in: idsToDelete } }
+      const result = await verifiedReviewCollection.deleteMany(query)
+      res.send(result)
+   }
+})
+// Delete verified Review (id)
+app.delete('/single/review/delete/:id', async (req, res) => {
+   const id = req.params.id
+   const query = { _id: new ObjectId(id) }
+   const result = await pendingReviewCollection.deleteOne(query)
+   res.send(result)
+})
+app.get('/', (req, res) => {
+   res.send('server is running on jobportal ai')
+})
 
     await userCollection.updateOne({ email }, updateQuery);
 
