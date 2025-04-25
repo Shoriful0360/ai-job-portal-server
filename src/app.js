@@ -16,6 +16,83 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Aggregation for Job Post Growth by Month
+app.get("/statistics/jobPostGrowth", async (req, res) => {
+  try {
+    const result = await jobCollection.aggregate([
+      {
+        $group: {
+          _id: { $month: "$createdAt" },
+          jobCount: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]).toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch job post growth data", error });
+  }
+});
+
+// Aggregation for Application Count by Month
+app.get("/statistics/applicationCount", async (req, res) => {
+  try {
+    const result = await applicationCollection.aggregate([
+      {
+        $group: {
+          _id: { $month: "$appliedAt" },
+          applicationCount: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]).toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch application count data", error });
+  }
+});
+
+// Aggregation for Job Category Distribution
+app.get("/statistics/jobCategoryDistribution", async (req, res) => {
+  try {
+    const result = await jobCollection.aggregate([
+      {
+        $group: {
+          _id: "$category",
+          count: { $sum: 1 }
+        }
+      }
+    ]).toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch job category distribution data", error });
+  }
+});
+
+// Aggregation for User Signups by Month
+app.get("/statistics/userSignups", async (req, res) => {
+  try {
+    const result = await userCollection.aggregate([
+      {
+        $group: {
+          _id: { $month: "$signupDate" },
+          signupCount: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]).toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch user signup data", error });
+  }
+});
+
 // Get user role info by email
 app.get("/user-info/role/:email", async (req, res) => {
   const email = req.params.email;
