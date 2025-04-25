@@ -15,52 +15,52 @@ app.get("/user-info/role/:email", async (req, res) => {
    const query = { email };
    const result = await userCollection.findOne(query);
    res.send(result);
- });
- 
+});
+
 app.post("/register", async (req, res) => {
    const userData = req.body;
    const existingUser = await userCollection.findOne({ email: userData?.email });
- 
+
    if (existingUser) {
-     return res.status(400).json({ message: "Email already exists" });
+      return res.status(400).json({ message: "Email already exists" });
    }
- 
+
    if (userData.password) {
-     const hashedPassword = await bcrypt.hash(userData.password, 10);
-     const result = await userCollection.insertOne({
-       ...userData,
-       password: hashedPassword,
-       loginAttempts: 0,
-       lockUntil: null,
-     });
-     return res.send(result);
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      const result = await userCollection.insertOne({
+         ...userData,
+         password: hashedPassword,
+         loginAttempts: 0,
+         lockUntil: null,
+      });
+      return res.send(result);
    } else {
-     const result = await userCollection.insertOne(userData);
-     res.send(result);
+      const result = await userCollection.insertOne(userData);
+      res.send(result);
    }
- });
+});
 app.patch("/users/:id/role", async (req, res) => {
    const id = req.params.id;
    const { role } = req.body;
    try {
-     const result = await userCollection.updateOne(
-       { _id: new ObjectId(id) },
-       { $set: { role } }
-     );
-     res.send(result);
+      const result = await userCollection.updateOne(
+         { _id: new ObjectId(id) },
+         { $set: { role } }
+      );
+      res.send(result);
    } catch (error) {
-     res.status(500).json({ message: "Failed to update role", error });
+      res.status(500).json({ message: "Failed to update role", error });
    }
- });
+});
 app.delete("/users/:id", async (req, res) => {
    const id = req.params.id;
    try {
-     const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
-     res.send(result);
+      const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
+      res.send(result);
    } catch (error) {
-     res.status(500).json({ message: "Failed to delete user", error });
+      res.status(500).json({ message: "Failed to delete user", error });
    }
- });
+});
 // block user when enter wrong password
 
 app.post('/wrong-password', async (req, res) => {
@@ -300,6 +300,13 @@ app.get('/applyJob/:email', async (req, res) => {
    const result = await applyJobCollection.find(query).toArray()
    res.send(result)
 })
+// Get All Apply Job A Specific Job Seeker email
+app.get('/applyJob/:email', async (req, res) => {
+   const email = req.params.email
+   const query = { jobSeekerEmail: email }
+   const result = await applyJobCollection.find(query).toArray()
+   res.send(result)
+})
 // Get data A Specific Job Seeker apply id
 app.get('/single/Candidate/data/:id', async (req, res) => {
    const id = req.params.id
@@ -324,6 +331,13 @@ app.patch('/updateApplyCount/:id', async (req, res) => {
 app.get('/singleJob/all/Candidates/:id', async (req, res) => {
    const id = req.params.id
    const query = { jobId: id }
+   const result = await applyJobCollection.find(query).toArray()
+   res.send(result)
+})
+//get all hired candidates  A Specific employer
+app.get('/hired/all/Candidates/:email', async (req, res) => {
+   const email = req.params.email
+   const query = { companyEmail: email }
    const result = await applyJobCollection.find(query).toArray()
    res.send(result)
 })
@@ -432,6 +446,46 @@ app.delete('/single/review/delete/:id', async (req, res) => {
    const query = { _id: new ObjectId(id) }
    const result = await pendingReviewCollection.deleteOne(query)
    res.send(result)
+})
+// get all Users
+app.get("/users", async (req, res) => {
+   try {
+      const users = await userCollection.find().toArray();
+      res.send(users);
+   } catch (error) {
+      res.status(500).json({ message: "Failed to fetch users", error });
+   }
+});
+// get all employers
+app.get('/employers', async (req, res) => {
+   const users = await userCollection.aggregate([
+      {
+         $match: { role: 'Employer' }
+      },
+      {
+         $lookup: {
+            from: 'allJob',
+            localField: 'email',
+            foreignField: 'email',
+            as: 'companyJobs'
+         }
+      },
+      {
+         $addFields: {
+            jobCount: { $size: '$companyJobs' }
+         }
+      },
+      {
+         $sort: { jobCount: -1 }
+      },
+      {
+         $project: {
+            password: 0,
+            companyJobs: 0
+         }
+      }
+   ]).toArray()
+   res.send(users);
 })
 app.get('/', (req, res) => {
    res.send('server is running on jobportal ai')
