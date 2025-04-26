@@ -52,7 +52,7 @@ app.put("/change-password/:email", async (req, res) => {
 
     if(!user?.password){
 
-       return res.status(404).json({ error: "You cannot register with password" });
+       return res.status(404).json({ error: "You donot register with password" });
     }
 
     //  Compare current password with hashed one
