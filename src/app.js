@@ -1,14 +1,236 @@
 require("dotenv").config(); //must be include all file
 const express = require("express");
+const { v4: uuidv4 } = require('uuid');
 const cors = require("cors");
 const bcrypt = require("bcryptjs")
 const { jobCollection, userCollection, pendingCollection, saveJobCollection, applyJobCollection, pendingReviewCollection, contactCollection, verifiedReviewCollection } = require("./mongodb/connect");
 const { ObjectId } = require("mongodb");
-const app = express();
+const app = express()
+  
+//  middleware
+app.use(cors())
+app.use(express.json())
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// CRUD operation
+
+app.get('/user-info/role/:email',async(req,res)=>{
+   const email=req.params.email;
+   const query={email}
+   const result=await userCollection.findOne(query)
+   res.send(result)
+})
+
+// update user info
+app.post('/update-user/:email',async(req,res)=>{
+   const email=req.params.email;
+   const {...updateField}=req.body;
+   if(!email){
+      return res.status(400).json({error:'Email is required'})
+   }
+  const result=await userCollection.updateOne(
+   {email:email},
+   {$set:updateField}
+  )
+res.send(result)
+})
+
+// update password
+// const bcrypt = require("bcrypt");
+
+app.put("/change-password/:email", async (req, res) => {
+  const { email } = req.params;
+  const { currentPassword, newPassword } = req.body;
+
+
+
+  try {
+    const user = await userCollection.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if(!user?.password){
+
+       return res.status(404).json({ error: "You donot register with password" });
+    }
+
+    //  Compare current password with hashed one
+    const isPasswordCorrect = await bcrypt.compare(currentPassword, user?.password);
+    if (!isPasswordCorrect) {
+      return res.status(400).json({ error: "Your current password is incorrect" });
+    }
+
+    //  Hash the new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    //  Update password in MongoDB
+    const result = await userCollection.updateOne(
+      { email },
+      { $set: { password: hashedPassword } }
+    );
+
+    res.send({ message: "Password updated successfully", result });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+// save skill 
+
+// POST /add-skill/:email
+app.post("/add-skill/:email", async (req, res) => {
+   const email = req.params.email;
+   const newSkill = {
+      ...req.body,
+      id:uuidv4() //add unique id
+   }
+   if(!email){
+      return res.status(400).json({error:'Email is required'})
+   }
+   try {
+     const result = await userCollection.updateOne(
+       { email },
+       {
+         $push: { skills: newSkill }, 
+       },
+       { upsert: true }
+     );
+ 
+     res.status(200).send({ success: true, message: "Skill added", result });
+   } catch (err) {
+     console.error(err);
+     res.status(500).send({ success: false, error: "Failed to add skill" });
+   }
+ });
+ 
+//  update skill
+app.put("/update-skill/:email/:skillId",async(req,res)=>{
+   const {email,skillId}=req.params;  
+   const updateSkill=req.body;
+   console.log(skillId)
+  
+   if(!email){
+      return res.status(400).json({error:'Email is required'})
+   }
+ 
+   const result=await userCollection.updateOne(
+      {email,"skills.id":skillId},
+      {$set: {
+         "skills.$.skill_name": updateSkill.skill_name,
+         "skills.$.experience": updateSkill.experience,
+         "skills.$.Project_link": updateSkill.Project_link,
+         "skills.$.github_link_client": updateSkill.github_link_client,
+         "skills.$.github_link_server": updateSkill.github_link_server,
+       },}
+   )
+   res.send(result)
+})
+
+// delete skill
+app.delete("/delete-skill/:email/:skillId",async(req,res)=>{
+   const{email,skillId}=req.params;
+   if(!email || !skillId){
+      return res.status(400).json({error:"Email and skillId are require"})
+   }
+   try{
+      const result=await userCollection.updateOne(
+         {email},
+         {$pull:{skills:{id:skillId}}}//remove matching skill by id
+      )
+      res.send(result)
+   }catch(error){
+      res.status(500).json({suucess:false,error:"Failed to delet skill"})
+   }
+})
+
+// user info save when register
+app.post('/register', async (req, res) => {
+   const userData = req.body;
+   const existingUser=await userCollection.findOne({email:userData?.email});
+   if(existingUser){
+      return res.status(400).json({message:"Email already exists"})
+   }
+
+
+   if(userData.password){
+      const hashedPassword=await bcrypt.hash(userData.password,10)
+      const result=await userCollection.insertOne({
+         ...userData,
+           password:hashedPassword,
+           loginAttempts: 0,          // Initial login attempts counter
+           lockUntil: null,
+        })
+       return  res.send(result)
+   }else{
+      const result=await userCollection.insertOne({
+         ...userData,
+        })
+        res.send(result)
+   }
+  
+ 
+})
+
+
+
+// block user when enter wrong password
+
+app.post('/wrong-password', async (req, res) => {
+   const { email, password } = req.body;
+   const user = await userCollection.findOne({ email });
+
+   // User না থাকলে
+   if (!user) {
+       return res.status(403).json({ message: 'User not found' });
+   }
+
+   // যদি account lock করা থাকে
+   if (user.lockUntil && user.lockUntil > Date.now()) {
+       return res.status(403).json({
+           message: `Your account is locked. Try again after ${new Date(user.lockUntil).toLocaleString()}`
+       });
+   }
+
+   // Password মিলছে কি না চেক
+   const isMatch = await bcrypt.compare(password, user.password);
+  
+
+
+   if (isMatch) {
+       // সফল login হলে loginAttempts reset হবে
+       await userCollection.updateOne({ email }, {
+           $set: {
+               loginAttempts: 0,
+               lockUntil: null
+           }
+       });
+
+       // ✅ এখানেই response success
+       return res.status(200).send({ message: 'login successful' });
+   } else {
+       // ভুল password, loginAttempts বাড়াও
+       let updateQuery = { $inc: { loginAttempts: 1 } };
+
+       if (user.loginAttempts >= 2) {
+           updateQuery.$set = { lockUntil: Date.now() + 60 * 60 * 1000 }; // 1 ঘণ্টার জন্য block
+       }
+
+       await userCollection.updateOne({ email }, updateQuery);
+
+       if (user.loginAttempts >= 2) {
+           return res.status(403).json({
+               message: "Too many failed attempts. Account is locked for 1 hour."
+           });
+       } else {
+           return res.status(401).json({ message: 'Wrong password' });
+       }
+   }
+});
+
+
 
 // Aggregation for Job Post Growth by Month
 app.get("/statistics/jobPostGrowth", async (req, res) => {
@@ -89,36 +311,6 @@ app.get("/statistics/userSignups", async (req, res) => {
 
 // Get user role info by email
 app.get("/user-info/role/:email", async (req, res) => {
-<<<<<<< HEAD
-   const email = req.params.email;
-   const query = { email };
-   const result = await userCollection.findOne(query);
-   res.send(result);
-});
-
-app.post("/register", async (req, res) => {
-   const userData = req.body;
-   const existingUser = await userCollection.findOne({ email: userData?.email });
-
-   if (existingUser) {
-      return res.status(400).json({ message: "Email already exists" });
-   }
-
-   if (userData.password) {
-      const hashedPassword = await bcrypt.hash(userData.password, 10);
-      const result = await userCollection.insertOne({
-         ...userData,
-         password: hashedPassword,
-         loginAttempts: 0,
-         lockUntil: null,
-      });
-      return res.send(result);
-   } else {
-      const result = await userCollection.insertOne(userData);
-      res.send(result);
-   }
-});
-=======
   const email = req.params.email;
   const query = { email };
   const result = await userCollection.findOne(query);
@@ -150,7 +342,6 @@ app.post("/register", async (req, res) => {
 });
 
 // Change user role
->>>>>>> 9b727c92e508113a61f228ea9e2844706eb7439e
 app.patch("/users/:id/role", async (req, res) => {
    const id = req.params.id;
    const { role } = req.body;
@@ -163,15 +354,10 @@ app.patch("/users/:id/role", async (req, res) => {
    } catch (error) {
       res.status(500).json({ message: "Failed to update role", error });
    }
-<<<<<<< HEAD
-});
-app.delete("/users/:id", async (req, res) => {
-=======
  });
  
  // Delete user
  app.delete("/users/:id", async (req, res) => {
->>>>>>> 9b727c92e508113a61f228ea9e2844706eb7439e
    const id = req.params.id;
    try {
       const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
@@ -179,13 +365,8 @@ app.delete("/users/:id", async (req, res) => {
    } catch (error) {
       res.status(500).json({ message: "Failed to delete user", error });
    }
-<<<<<<< HEAD
-});
-// block user when enter wrong password
-=======
  });
  
->>>>>>> 9b727c92e508113a61f228ea9e2844706eb7439e
 
 // Handle wrong password and lock account
 app.post("/wrong-password", async (req, res) => {
