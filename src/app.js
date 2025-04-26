@@ -1,8 +1,8 @@
 require("dotenv").config(); //must be include all file
 const express = require("express");
-const { v4: uuidv4 } = require('uuid');
+
 const cors = require("cors");
-const bcrypt = require("bcryptjs")
+
 const { jobCollection, userCollection, pendingCollection, saveJobCollection, applyJobCollection, pendingReviewCollection, contactCollection, verifiedReviewCollection } = require("./mongodb/connect");
 const { ObjectId } = require("mongodb");
 const app = express()
@@ -20,6 +20,25 @@ app.get('/user-info/role/:email',async(req,res)=>{
    res.send(result)
 })
 
+
+
+// user info save when register
+app.post('/register', async (req, res) => {
+  const userData = req.body;
+  const existingUser=await userCollection.findOne({email:userData?.email});
+  if(existingUser){
+     return res.status(400).json({message:"Email already exists"})
+  }
+
+  const result=await userCollection.insertOne({
+   ...userData,
+     loginAttempts: 0,          // Initial login attempts counter
+     lockUntil: null,
+  })
+  res.send(result)
+
+})
+
 // update user info
 app.post('/update-user/:email',async(req,res)=>{
    const email=req.params.email;
@@ -34,47 +53,55 @@ app.post('/update-user/:email',async(req,res)=>{
 res.send(result)
 })
 
-// update password
-// const bcrypt = require("bcrypt");
 
-app.put("/change-password/:email", async (req, res) => {
-  const { email } = req.params;
-  const { currentPassword, newPassword } = req.body;
+// track-login-attempts.js
+app.post('/track-login-attempts', async (req, res) => {
+   const { email } = req.body;
+   const user = await userCollection.findOne({ email });
 
+   if (!user) {
+       return res.status(404).json({ message: 'User not found' });
+   }
 
+   const newLoginAttempts = (user.loginAttempts || 0) + 1;
 
-  try {
-    const user = await userCollection.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
+   const update = {
+       loginAttempts: newLoginAttempts
+   };
 
-    if(!user?.password){
+   if (newLoginAttempts >= 3) {
+       update.lockUntil = Date.now() + 60 * 60 * 1000; // 1 hour lock
+       update.loginAttempts = 0; // reset
+   }
 
-       return res.status(404).json({ error: "You donot register with password" });
-    }
+   await userCollection.updateOne({ email }, { $set: update });
+   res.send({ message: 'Login attempt updated' });
+});
+// check-user-status.js
+app.post('/check-user-status', async (req, res) => {
+   const { email } = req.body;
+   const user = await userCollection.findOne({ email });
 
-    //  Compare current password with hashed one
-    const isPasswordCorrect = await bcrypt.compare(currentPassword, user?.password);
-    if (!isPasswordCorrect) {
-      return res.status(400).json({ error: "Your current password is incorrect" });
-    }
+   if (!user) {
+       return res.status(404).json({ message: 'User not found' });
+   }
 
-    //  Hash the new password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
+   if (user.lockUntil && user.lockUntil > Date.now()) {
+       return res.status(403).json({
+           message: `Account is locked. Try again at ${new Date(user.lockUntil).toLocaleString()}`
+       });
+   }
 
-    //  Update password in MongoDB
-    const result = await userCollection.updateOne(
+   return res.json({ ok: true });
+});
+// reset-login-attempts.js
+app.post('/reset-login-attempts', async (req, res) => {
+  const { email } = req.body;
+  await userCollection.updateOne(
       { email },
-      { $set: { password: hashedPassword } }
-    );
-
-    res.send({ message: "Password updated successfully", result });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
-  }
+      { $set: { loginAttempts: 0, lockUntil: null } }
+  );
+  res.send({ message: 'Attempts reset' });
 });
 
 
@@ -146,89 +173,10 @@ app.delete("/delete-skill/:email/:skillId",async(req,res)=>{
    }
 })
 
-// user info save when register
-app.post('/register', async (req, res) => {
-   const userData = req.body;
-   const existingUser=await userCollection.findOne({email:userData?.email});
-   if(existingUser){
-      return res.status(400).json({message:"Email already exists"})
-   }
-
-
-   if(userData.password){
-      const hashedPassword=await bcrypt.hash(userData.password,10)
-      const result=await userCollection.insertOne({
-         ...userData,
-           password:hashedPassword,
-           loginAttempts: 0,          // Initial login attempts counter
-           lockUntil: null,
-        })
-       return  res.send(result)
-   }else{
-      const result=await userCollection.insertOne({
-         ...userData,
-        })
-        res.send(result)
-   }
-  
- 
-})
 
 
 
-// block user when enter wrong password
 
-app.post('/wrong-password', async (req, res) => {
-   const { email, password } = req.body;
-   const user = await userCollection.findOne({ email });
-
-   // User না থাকলে
-   if (!user) {
-       return res.status(403).json({ message: 'User not found' });
-   }
-
-   // যদি account lock করা থাকে
-   if (user.lockUntil && user.lockUntil > Date.now()) {
-       return res.status(403).json({
-           message: `Your account is locked. Try again after ${new Date(user.lockUntil).toLocaleString()}`
-       });
-   }
-
-   // Password মিলছে কি না চেক
-   const isMatch = await bcrypt.compare(password, user.password);
-  
-
-
-   if (isMatch) {
-       // সফল login হলে loginAttempts reset হবে
-       await userCollection.updateOne({ email }, {
-           $set: {
-               loginAttempts: 0,
-               lockUntil: null
-           }
-       });
-
-       // ✅ এখানেই response success
-       return res.status(200).send({ message: 'login successful' });
-   } else {
-       // ভুল password, loginAttempts বাড়াও
-       let updateQuery = { $inc: { loginAttempts: 1 } };
-
-       if (user.loginAttempts >= 2) {
-           updateQuery.$set = { lockUntil: Date.now() + 60 * 60 * 1000 }; // 1 ঘণ্টার জন্য block
-       }
-
-       await userCollection.updateOne({ email }, updateQuery);
-
-       if (user.loginAttempts >= 2) {
-           return res.status(403).json({
-               message: "Too many failed attempts. Account is locked for 1 hour."
-           });
-       } else {
-           return res.status(401).json({ message: 'Wrong password' });
-       }
-   }
-});
 
 
 
