@@ -146,6 +146,7 @@ app.delete("/delete-skill/:email/:skillId",async(req,res)=>{
    }
 })
 
+// user info save when register
 app.post('/register', async (req, res) => {
    const userData = req.body;
    const existingUser=await userCollection.findOne({email:userData?.email});
