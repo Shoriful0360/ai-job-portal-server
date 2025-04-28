@@ -1,14 +1,184 @@
 require("dotenv").config(); //must be include all file
 const express = require("express");
+
 const cors = require("cors");
-const bcrypt = require("bcryptjs")
+
 const { jobCollection, userCollection, pendingCollection, saveJobCollection, applyJobCollection, pendingReviewCollection, contactCollection, verifiedReviewCollection } = require("./mongodb/connect");
 const { ObjectId } = require("mongodb");
-const app = express();
+const app = express()
+  
+//  middleware
+app.use(cors())
+app.use(express.json())
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// CRUD operation
+
+app.get('/user-info/role/:email',async(req,res)=>{
+   const email=req.params.email;
+   const query={email}
+   const result=await userCollection.findOne(query)
+   res.send(result)
+})
+
+
+
+// user info save when register
+app.post('/register', async (req, res) => {
+  const userData = req.body;
+  const existingUser=await userCollection.findOne({email:userData?.email});
+  if(existingUser){
+     return res.status(400).json({message:"Email already exists"})
+  }
+
+  const result=await userCollection.insertOne({
+   ...userData,
+     loginAttempts: 0,          // Initial login attempts counter
+     lockUntil: null,
+  })
+  res.send(result)
+
+})
+
+// update user info
+app.post('/update-user/:email',async(req,res)=>{
+   const email=req.params.email;
+   const {...updateField}=req.body;
+   if(!email){
+      return res.status(400).json({error:'Email is required'})
+   }
+  const result=await userCollection.updateOne(
+   {email:email},
+   {$set:updateField}
+  )
+res.send(result)
+})
+
+
+// track-login-attempts.js
+app.post('/track-login-attempts', async (req, res) => {
+   const { email } = req.body;
+   const user = await userCollection.findOne({ email });
+
+   if (!user) {
+       return res.status(404).json({ message: 'User not found' });
+   }
+
+   const newLoginAttempts = (user.loginAttempts || 0) + 1;
+
+   const update = {
+       loginAttempts: newLoginAttempts
+   };
+
+   if (newLoginAttempts >= 3) {
+       update.lockUntil = Date.now() + 60 * 60 * 1000; // 1 hour lock
+       update.loginAttempts = 0; // reset
+   }
+
+   await userCollection.updateOne({ email }, { $set: update });
+   res.send({ message: 'Login attempt updated' });
+});
+// check-user-status.js
+app.post('/check-user-status', async (req, res) => {
+   const { email } = req.body;
+   const user = await userCollection.findOne({ email });
+
+   if (!user) {
+       return res.status(404).json({ message: 'User not found' });
+   }
+
+   if (user.lockUntil && user.lockUntil > Date.now()) {
+       return res.status(403).json({
+           message: `Account is locked. Try again at ${new Date(user.lockUntil).toLocaleString()}`
+       });
+   }
+
+   return res.json({ ok: true });
+});
+// reset-login-attempts.js
+app.post('/reset-login-attempts', async (req, res) => {
+  const { email } = req.body;
+  await userCollection.updateOne(
+      { email },
+      { $set: { loginAttempts: 0, lockUntil: null } }
+  );
+  res.send({ message: 'Attempts reset' });
+});
+
+
+// save skill 
+
+// POST /add-skill/:email
+app.post("/add-skill/:email", async (req, res) => {
+   const email = req.params.email;
+   const newSkill = {
+      ...req.body,
+      id:uuidv4() //add unique id
+   }
+   if(!email){
+      return res.status(400).json({error:'Email is required'})
+   }
+   try {
+     const result = await userCollection.updateOne(
+       { email },
+       {
+         $push: { skills: newSkill }, 
+       },
+       { upsert: true }
+     );
+ 
+     res.status(200).send({ success: true, message: "Skill added", result });
+   } catch (err) {
+     console.error(err);
+     res.status(500).send({ success: false, error: "Failed to add skill" });
+   }
+ });
+ 
+//  update skill
+app.put("/update-skill/:email/:skillId",async(req,res)=>{
+   const {email,skillId}=req.params;  
+   const updateSkill=req.body;
+   console.log(skillId)
+  
+   if(!email){
+      return res.status(400).json({error:'Email is required'})
+   }
+ 
+   const result=await userCollection.updateOne(
+      {email,"skills.id":skillId},
+      {$set: {
+         "skills.$.skill_name": updateSkill.skill_name,
+         "skills.$.experience": updateSkill.experience,
+         "skills.$.Project_link": updateSkill.Project_link,
+         "skills.$.github_link_client": updateSkill.github_link_client,
+         "skills.$.github_link_server": updateSkill.github_link_server,
+       },}
+   )
+   res.send(result)
+})
+
+// delete skill
+app.delete("/delete-skill/:email/:skillId",async(req,res)=>{
+   const{email,skillId}=req.params;
+   if(!email || !skillId){
+      return res.status(400).json({error:"Email and skillId are require"})
+   }
+   try{
+      const result=await userCollection.updateOne(
+         {email},
+         {$pull:{skills:{id:skillId}}}//remove matching skill by id
+      )
+      res.send(result)
+   }catch(error){
+      res.status(500).json({suucess:false,error:"Failed to delet skill"})
+   }
+})
+
+
+
+
+
+
+
 
 // Aggregation for Job Post Growth by Month
 app.get("/statistics/jobPostGrowth", async (req, res) => {
