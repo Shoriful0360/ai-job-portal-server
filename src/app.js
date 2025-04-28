@@ -89,36 +89,6 @@ app.get("/statistics/userSignups", async (req, res) => {
 
 // Get user role info by email
 app.get("/user-info/role/:email", async (req, res) => {
-<<<<<<< HEAD
-   const email = req.params.email;
-   const query = { email };
-   const result = await userCollection.findOne(query);
-   res.send(result);
-});
-
-app.post("/register", async (req, res) => {
-   const userData = req.body;
-   const existingUser = await userCollection.findOne({ email: userData?.email });
-
-   if (existingUser) {
-      return res.status(400).json({ message: "Email already exists" });
-   }
-
-   if (userData.password) {
-      const hashedPassword = await bcrypt.hash(userData.password, 10);
-      const result = await userCollection.insertOne({
-         ...userData,
-         password: hashedPassword,
-         loginAttempts: 0,
-         lockUntil: null,
-      });
-      return res.send(result);
-   } else {
-      const result = await userCollection.insertOne(userData);
-      res.send(result);
-   }
-});
-=======
   const email = req.params.email;
   const query = { email };
   const result = await userCollection.findOne(query);
@@ -150,7 +120,6 @@ app.post("/register", async (req, res) => {
 });
 
 // Change user role
->>>>>>> 9b727c92e508113a61f228ea9e2844706eb7439e
 app.patch("/users/:id/role", async (req, res) => {
    const id = req.params.id;
    const { role } = req.body;
@@ -163,15 +132,10 @@ app.patch("/users/:id/role", async (req, res) => {
    } catch (error) {
       res.status(500).json({ message: "Failed to update role", error });
    }
-<<<<<<< HEAD
-});
-app.delete("/users/:id", async (req, res) => {
-=======
  });
  
  // Delete user
  app.delete("/users/:id", async (req, res) => {
->>>>>>> 9b727c92e508113a61f228ea9e2844706eb7439e
    const id = req.params.id;
    try {
       const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
@@ -179,13 +143,8 @@ app.delete("/users/:id", async (req, res) => {
    } catch (error) {
       res.status(500).json({ message: "Failed to delete user", error });
    }
-<<<<<<< HEAD
-});
-// block user when enter wrong password
-=======
  });
  
->>>>>>> 9b727c92e508113a61f228ea9e2844706eb7439e
 
 // Handle wrong password and lock account
 app.post("/wrong-password", async (req, res) => {
@@ -223,6 +182,18 @@ app.post("/wrong-password", async (req, res) => {
     if (user.loginAttempts >= 2) {
       updateQuery.$set = { lockUntil: Date.now() + 60 * 60 * 1000 };
     }
+    
+    await userCollection.updateOne({ email }, updateQuery);
+
+    if (user.loginAttempts >= 2) {
+      return res.status(403).json({
+        message: "Too many failed attempts. Account is locked for 1 hour.",
+      });
+    } else {
+      return res.status(401).json({ message: "Wrong password" });
+    }
+  }
+});
 // category job
 app.get('/category-job/:title', async (req, res) => {
    const { title } = req.params;
@@ -437,21 +408,8 @@ app.get('/employers', async (req, res) => {
    ]).toArray()
    res.send(users);
 })
-app.get('/', (req, res) => {
-   res.send('server is running on jobportal ai')
-})
 
-    await userCollection.updateOne({ email }, updateQuery);
 
-    if (user.loginAttempts >= 2) {
-      return res.status(403).json({
-        message: "Too many failed attempts. Account is locked for 1 hour.",
-      });
-    } else {
-      return res.status(401).json({ message: "Wrong password" });
-    }
-  }
-});
 
 // New job post to pending collection
 app.post("/pendingJob", async (req, res) => {
