@@ -1,6 +1,6 @@
 require("dotenv").config(); //must be include all file
 const express = require("express");
-
+const { v4: uuidv4 } = require('uuid');
 const cors = require("cors");
 
 const { jobCollection, userCollection, pendingCollection, saveJobCollection, applyJobCollection, pendingReviewCollection, contactCollection, verifiedReviewCollection } = require("./mongodb/connect");
@@ -114,6 +114,8 @@ app.post("/add-skill/:email", async (req, res) => {
       ...req.body,
       id:uuidv4() //add unique id
    }
+   console.log(newSkill)
+   return
    if(!email){
       return res.status(400).json({error:'Email is required'})
    }
