@@ -2,11 +2,17 @@ require("dotenv").config(); //must be include all file
 const express = require("express");
 const { v4: uuidv4 } = require('uuid');
 const cors = require("cors");
-
+const{Server}=require('socket.io')
+const http=require('http')
 const { jobCollection, userCollection, pendingCollection, saveJobCollection, applyJobCollection, pendingReviewCollection, contactCollection, verifiedReviewCollection } = require("./mongodb/connect");
 const { ObjectId } = require("mongodb");
 const app = express()
-  
+  const server=http.createServer(app)
+  const io=new Server(server,{
+    cors:{
+      origin:'*'
+    }
+  })
 //  middleware
 app.use(cors())
 app.use(express.json())
@@ -114,8 +120,6 @@ app.post("/add-skill/:email", async (req, res) => {
       ...req.body,
       id:uuidv4() //add unique id
    }
-   console.log(newSkill)
-   return
    if(!email){
       return res.status(400).json({error:'Email is required'})
    }
@@ -130,7 +134,7 @@ app.post("/add-skill/:email", async (req, res) => {
  
      res.status(200).send({ success: true, message: "Skill added", result });
    } catch (err) {
-     console.error(err);
+
      res.status(500).send({ success: false, error: "Failed to add skill" });
    }
  });
@@ -139,7 +143,7 @@ app.post("/add-skill/:email", async (req, res) => {
 app.put("/update-skill/:email/:skillId",async(req,res)=>{
    const {email,skillId}=req.params;  
    const updateSkill=req.body;
-   console.log(skillId)
+
   
    if(!email){
       return res.status(400).json({error:'Email is required'})
