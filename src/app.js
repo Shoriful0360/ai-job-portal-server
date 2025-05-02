@@ -1,23 +1,104 @@
-require("dotenv").config(); //must be include all file
+// Load environment variables first
+require("dotenv").config(); // ✅ must be included at the top
+
+// Import modules
 const express = require("express");
-
+const { v4: uuidv4 } = require('uuid');
 const cors = require("cors");
-
-const { jobCollection, userCollection, pendingCollection, saveJobCollection, applyJobCollection, pendingReviewCollection, contactCollection, verifiedReviewCollection } = require("./mongodb/connect");
+const http = require('http');
+const { Server } = require('socket.io');
 const { ObjectId } = require("mongodb");
-const app = express()
-  
-//  middleware
-app.use(cors())
-app.use(express.json())
+const { Socket } = require("dgram");
 
-// CRUD operation
+// Create express app
+const app = express();
 
-app.get('/user-info/role/:email',async(req,res)=>{
-   const email=req.params.email;
-   const query={email}
-   const result=await userCollection.findOne(query)
-   res.send(result)
+// Create HTTP server and attach Socket.IO
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*'
+  }
+});
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Import MongoDB collections after dotenv (so DB_USER/DB_PASSWORD is available)
+const {
+  jobCollection,
+  userCollection,
+  pendingCollection,
+  saveJobCollection,
+  applyJobCollection,
+  pendingReviewCollection,
+  contactCollection,
+  verifiedReviewCollection,
+  messageCollection
+} = require("./mongodb/connect");
+
+// Export or use io/server/app as needed below
+
+// socekt api
+// realtime communication
+io.on("connection", (socket) => {
+  console.log("connected", socket.id);
+
+  // Load previous messages when a user connects
+  socket.on("loadMessages", async ({ sender, receiver }) => {
+    try {
+      const messages = await messageCollection.find({
+        $or: [
+          { sender, receiver },
+          { sender: receiver, receiver: sender }
+        ]
+      }).sort({ timeStamp: 1 }).toArray();
+      socket.emit("messagesLoaded", messages);
+    } catch (error) {
+      console.error('Error loading messages:', error);
+    }
+  });
+
+  socket.on("chat", async chat => {
+    try {
+      const newMessage = {
+        ...chat,
+        timeStamp: new Date()
+      };
+      await messageCollection.insertOne(newMessage);
+      io.emit("newMessage", newMessage); // Send to all connected clients
+    } catch (error) {
+      console.error('Error saving chat:', error);
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log('disconnected', socket.id);
+  });
+});
+
+app.get("/messages", async (req, res) => {
+  const { senderId, receiverId } = req.query;
+
+  const messages = await messageCollection
+    .find({
+      $or: [
+        { senderId, receiverId },
+        { senderId: receiverId, receiverId: senderId }
+      ]
+    })
+    .sort({ timestamp: 1 })
+    .toArray();
+
+  res.send(messages);
+});
+
+app.get('/user-info/role/:email', async (req, res) => {
+  const email = req.params.email;
+  const query = { email }
+  const result = await userCollection.findOne(query)
+  res.send(result)
 })
 
 
@@ -25,81 +106,81 @@ app.get('/user-info/role/:email',async(req,res)=>{
 // user info save when register
 app.post('/register', async (req, res) => {
   const userData = req.body;
-  const existingUser=await userCollection.findOne({email:userData?.email});
-  if(existingUser){
-     return res.status(400).json({message:"Email already exists"})
+  const existingUser = await userCollection.findOne({ email: userData?.email });
+  if (existingUser) {
+    return res.status(400).json({ message: "Email already exists" })
   }
 
-  const result=await userCollection.insertOne({
-   ...userData,
-     loginAttempts: 0,          // Initial login attempts counter
-     lockUntil: null,
+  const result = await userCollection.insertOne({
+    ...userData,
+    loginAttempts: 0,          // Initial login attempts counter
+    lockUntil: null,
   })
   res.send(result)
 
 })
 
 // update user info
-app.post('/update-user/:email',async(req,res)=>{
-   const email=req.params.email;
-   const {...updateField}=req.body;
-   if(!email){
-      return res.status(400).json({error:'Email is required'})
-   }
-  const result=await userCollection.updateOne(
-   {email:email},
-   {$set:updateField}
+app.post('/update-user/:email', async (req, res) => {
+  const email = req.params.email;
+  const { ...updateField } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' })
+  }
+  const result = await userCollection.updateOne(
+    { email: email },
+    { $set: updateField }
   )
-res.send(result)
+  res.send(result)
 })
 
 
 // track-login-attempts.js
 app.post('/track-login-attempts', async (req, res) => {
-   const { email } = req.body;
-   const user = await userCollection.findOne({ email });
+  const { email } = req.body;
+  const user = await userCollection.findOne({ email });
 
-   if (!user) {
-       return res.status(404).json({ message: 'User not found' });
-   }
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' });
+  }
 
-   const newLoginAttempts = (user.loginAttempts || 0) + 1;
+  const newLoginAttempts = (user.loginAttempts || 0) + 1;
 
-   const update = {
-       loginAttempts: newLoginAttempts
-   };
+  const update = {
+    loginAttempts: newLoginAttempts
+  };
 
-   if (newLoginAttempts >= 3) {
-       update.lockUntil = Date.now() + 60 * 60 * 1000; // 1 hour lock
-       update.loginAttempts = 0; // reset
-   }
+  if (newLoginAttempts >= 3) {
+    update.lockUntil = Date.now() + 60 * 60 * 1000; // 1 hour lock
+    update.loginAttempts = 0; // reset
+  }
 
-   await userCollection.updateOne({ email }, { $set: update });
-   res.send({ message: 'Login attempt updated' });
+  await userCollection.updateOne({ email }, { $set: update });
+  res.send({ message: 'Login attempt updated' });
 });
 // check-user-status.js
 app.post('/check-user-status', async (req, res) => {
-   const { email } = req.body;
-   const user = await userCollection.findOne({ email });
+  const { email } = req.body;
+  const user = await userCollection.findOne({ email });
 
-   if (!user) {
-       return res.status(404).json({ message: 'User not found' });
-   }
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' });
+  }
 
-   if (user.lockUntil && user.lockUntil > Date.now()) {
-       return res.status(403).json({
-           message: `Account is locked. Try again at ${new Date(user.lockUntil).toLocaleString()}`
-       });
-   }
+  if (user.lockUntil && user.lockUntil > Date.now()) {
+    return res.status(403).json({
+      message: `Account is locked. Try again at ${new Date(user.lockUntil).toLocaleString()}`
+    });
+  }
 
-   return res.json({ ok: true });
+  return res.json({ ok: true });
 });
 // reset-login-attempts.js
 app.post('/reset-login-attempts', async (req, res) => {
   const { email } = req.body;
   await userCollection.updateOne(
-      { email },
-      { $set: { loginAttempts: 0, lockUntil: null } }
+    { email },
+    { $set: { loginAttempts: 0, lockUntil: null } }
   );
   res.send({ message: 'Attempts reset' });
 });
@@ -109,68 +190,70 @@ app.post('/reset-login-attempts', async (req, res) => {
 
 // POST /add-skill/:email
 app.post("/add-skill/:email", async (req, res) => {
-   const email = req.params.email;
-   const newSkill = {
-      ...req.body,
-      id:uuidv4() //add unique id
-   }
-   if(!email){
-      return res.status(400).json({error:'Email is required'})
-   }
-   try {
-     const result = await userCollection.updateOne(
-       { email },
-       {
-         $push: { skills: newSkill }, 
-       },
-       { upsert: true }
-     );
- 
-     res.status(200).send({ success: true, message: "Skill added", result });
-   } catch (err) {
-     console.error(err);
-     res.status(500).send({ success: false, error: "Failed to add skill" });
-   }
- });
- 
+  const email = req.params.email;
+  const newSkill = {
+    ...req.body,
+    id: uuidv4() //add unique id
+  }
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' })
+  }
+  try {
+    const result = await userCollection.updateOne(
+      { email },
+      {
+        $push: { skills: newSkill },
+      },
+      { upsert: true }
+    );
+
+    res.status(200).send({ success: true, message: "Skill added", result });
+  } catch (err) {
+
+    res.status(500).send({ success: false, error: "Failed to add skill" });
+  }
+});
+
 //  update skill
-app.put("/update-skill/:email/:skillId",async(req,res)=>{
-   const {email,skillId}=req.params;  
-   const updateSkill=req.body;
-   console.log(skillId)
-  
-   if(!email){
-      return res.status(400).json({error:'Email is required'})
-   }
- 
-   const result=await userCollection.updateOne(
-      {email,"skills.id":skillId},
-      {$set: {
-         "skills.$.skill_name": updateSkill.skill_name,
-         "skills.$.experience": updateSkill.experience,
-         "skills.$.Project_link": updateSkill.Project_link,
-         "skills.$.github_link_client": updateSkill.github_link_client,
-         "skills.$.github_link_server": updateSkill.github_link_server,
-       },}
-   )
-   res.send(result)
+app.put("/update-skill/:email/:skillId", async (req, res) => {
+  const { email, skillId } = req.params;
+  const updateSkill = req.body;
+
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' })
+  }
+
+  const result = await userCollection.updateOne(
+    { email, "skills.id": skillId },
+    {
+      $set: {
+        "skills.$.skill_name": updateSkill.skill_name,
+        "skills.$.experience": updateSkill.experience,
+        "skills.$.Project_link": updateSkill.Project_link,
+        "skills.$.github_link_client": updateSkill.github_link_client,
+        "skills.$.github_link_server": updateSkill.github_link_server,
+      },
+    }
+  )
+  res.send(result)
 })
 
 // delete skill
-app.delete("/delete-skill/:email/:skillId",async(req,res)=>{
-   const{email,skillId}=req.params;
-   if(!email || !skillId){
-      return res.status(400).json({error:"Email and skillId are require"})
-   }
-   try{
-      const result=await userCollection.updateOne(
-         {email},
-         {$pull:{skills:{id:skillId}}}//remove matching skill by id
-      )
-      res.send(result)
-   }catch(error){
-      res.status(500).json({suucess:false,error:"Failed to delet skill"})
-   }
+app.delete("/delete-skill/:email/:skillId", async (req, res) => {
+  const { email, skillId } = req.params;
+  if (!email || !skillId) {
+    return res.status(400).json({ error: "Email and skillId are require" })
+  }
+  try {
+    const result = await userCollection.updateOne(
+      { email },
+      { $pull: { skills: { id: skillId } } }//remove matching skill by id
+    )
+    res.send(result)
+  } catch (error) {
+    res.status(500).json({ suucess: false, error: "Failed to delet skill" })
+  }
 })
 
 
@@ -291,30 +374,30 @@ app.post("/register", async (req, res) => {
 
 // Change user role
 app.patch("/users/:id/role", async (req, res) => {
-   const id = req.params.id;
-   const { role } = req.body;
-   try {
-      const result = await userCollection.updateOne(
-         { _id: new ObjectId(id) },
-         { $set: { role } }
-      );
-      res.send(result);
-   } catch (error) {
-      res.status(500).json({ message: "Failed to update role", error });
-   }
- });
- 
- // Delete user
- app.delete("/users/:id", async (req, res) => {
-   const id = req.params.id;
-   try {
-      const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
-      res.send(result);
-   } catch (error) {
-      res.status(500).json({ message: "Failed to delete user", error });
-   }
- });
- 
+  const id = req.params.id;
+  const { role } = req.body;
+  try {
+    const result = await userCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { role } }
+    );
+    res.send(result);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to update role", error });
+  }
+});
+
+// Delete user
+app.delete("/users/:id", async (req, res) => {
+  const id = req.params.id;
+  try {
+    const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
+    res.send(result);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to delete user", error });
+  }
+});
+
 
 // Handle wrong password and lock account
 app.post("/wrong-password", async (req, res) => {
@@ -352,224 +435,7 @@ app.post("/wrong-password", async (req, res) => {
     if (user.loginAttempts >= 2) {
       updateQuery.$set = { lockUntil: Date.now() + 60 * 60 * 1000 };
     }
-// category job
-app.get('/category-job/:title', async (req, res) => {
-   const { title } = req.params;
-   const query = { category: title };
-   const result = await jobCollection.find(query).toArray()
-   res.send(result)
-})
-//Apply Job Post API
-app.post('/applyJob/:email', async (req, res) => {
-   const data = req.body
-   const email = req.params.email
-   const jobId = req.query.jobId
-   const query = { jobSeekerEmail: email, jobId: jobId }
-   const isExist = await applyJobCollection.findOne(query)
-   if (isExist) {
-      return res.send('This Job All Ready Save Your Wishlist')
-   }
-   const result = await applyJobCollection.insertOne(data)
-   res.send(result)
-})
-// Get All Apply Job A Specific Job Seeker email
-app.get('/applyJob/:email', async (req, res) => {
-   const email = req.params.email
-   const query = { jobSeekerEmail: email }
-   const result = await applyJobCollection.find(query).toArray()
-   res.send(result)
-})
-// Get All Apply Job A Specific Job Seeker email
-app.get('/applyJob/:email', async (req, res) => {
-   const email = req.params.email
-   const query = { jobSeekerEmail: email }
-   const result = await applyJobCollection.find(query).toArray()
-   res.send(result)
-})
-// Get data A Specific Job Seeker apply id
-app.get('/single/Candidate/data/:id', async (req, res) => {
-   const id = req.params.id
-   const query = { _id: new ObjectId(id) }
-   const result = await applyJobCollection.findOne(query)
-   res.send(result)
-})
-//Job Seeker Apply any job and applyCount update 
-app.patch('/updateApplyCount/:id', async (req, res) => {
-   const id = req.params.id
-   const filter = { _id: id }
-   const update = {
-      $inc: {
-         applyCandidate: 1
-      }
-   }
-   const result = await jobCollection.updateOne(filter, update)
-   res.send(result)
-})
-
-//Specific job all candidates data get api
-app.get('/singleJob/all/Candidates/:id', async (req, res) => {
-   const id = req.params.id
-   const query = { jobId: id }
-   const result = await applyJobCollection.find(query).toArray()
-   res.send(result)
-})
-//get all hired candidates  A Specific employer
-app.get('/hired/all/Candidates/:email', async (req, res) => {
-   const email = req.params.email
-   const query = { companyEmail: email }
-   const result = await applyJobCollection.find(query).toArray()
-   res.send(result)
-})
-// Candidate Listed API
-app.patch('/listed/candidate/:id', async (req, res) => {
-   const id = req.params.id
-   const filter = { _id: new ObjectId(id) }
-   const update = {
-      $set: {
-         status: 'listed'
-      }
-   }
-   const result = await applyJobCollection.updateOne(filter, update)
-   res.send(result)
-})
-// Candidate Reject API
-app.patch('/reject/candidate/:id', async (req, res) => {
-   const id = req.params.id
-   const filter = { _id: new ObjectId(id) }
-   const update = {
-      $set: {
-         status: 'reject'
-      }
-   }
-   const result = await applyJobCollection.updateOne(filter, update)
-   res.send(result)
-})
-// Candidate Hired API
-app.patch('/hired/candidate/:id', async (req, res) => {
-   const id = req.params.id
-   const filter = { _id: new ObjectId(id) }
-   const update = {
-      $set: {
-         status: 'hired'
-      }
-   }
-   const result = await applyJobCollection.updateOne(filter, update)
-   res.send(result)
-})
-// Post pending contact API
-app.post('/contact/request', async (req, res) => {
-   const data = req.body
-   const result = await contactCollection.insertOne(data)
-   res.send(result)
-})
-// Get All Pending contact
-app.get('/contact/request', async (req, res) => {
-   const result = await contactCollection.find().toArray()
-   res.send(result)
-})
-// After Contact And delete this data
-app.delete('/delete/contact/request/:id', async (req, res) => {
-   const id = req.params.id
-   const query = { _id: new ObjectId(id) }
-   const result = await contactCollection.deleteOne(query)
-   res.send(result)
-})
-// Post pending Review API
-app.post('/pendingReview', async (req, res) => {
-   const data = req.body
-   const result = await pendingReviewCollection.insertOne(data)
-   res.send(result)
-})
-// Get All Pending Review 
-app.get('/pendingReview', async (req, res) => {
-   const result = await pendingReviewCollection.find().toArray()
-   res.send(result)
-})
-// Post verified Review API
-app.post('/verifiedReview', async (req, res) => {
-   const data = req.body
-   const result = await verifiedReviewCollection.insertOne(data)
-   res.send(result)
-})
-// Get All verified Review 
-app.get('/verifiedReview', async (req, res) => {
-   const result = await verifiedReviewCollection.find().toArray()
-   res.send(result)
-})
-// Update Review Status
-app.patch('/verified/review/status/:id', async (req, res) => {
-   const id = req.params.id
-   const filter = { _id: new ObjectId(id) }
-   const update = {
-      $set: {
-         status: 'verified'
-      }
-   }
-   const result = await verifiedReviewCollection.updateOne(filter, update)
-   res.send(result)
-})
-// Delete verified Review (email)
-app.delete('/review/delete/:email', async (req, res) => {
-   const email = req.params.email
-   const reviews = await verifiedReviewCollection.find({ email: email }).sort({ reviewTime: -1 }).toArray();
-   if (reviews.length > 1) {
-      const idsToDelete = reviews.slice(1).map(review => review._id);
-      const query = { _id: { $in: idsToDelete } }
-      const result = await verifiedReviewCollection.deleteMany(query)
-      res.send(result)
-   }
-})
-// Delete verified Review (id)
-app.delete('/single/review/delete/:id', async (req, res) => {
-   const id = req.params.id
-   const query = { _id: new ObjectId(id) }
-   const result = await pendingReviewCollection.deleteOne(query)
-   res.send(result)
-})
-// get all Users
-app.get("/users", async (req, res) => {
-   try {
-      const users = await userCollection.find().toArray();
-      res.send(users);
-   } catch (error) {
-      res.status(500).json({ message: "Failed to fetch users", error });
-   }
-});
-// get all employers
-app.get('/employers', async (req, res) => {
-   const users = await userCollection.aggregate([
-      {
-         $match: { role: 'Employer' }
-      },
-      {
-         $lookup: {
-            from: 'allJob',
-            localField: 'email',
-            foreignField: 'email',
-            as: 'companyJobs'
-         }
-      },
-      {
-         $addFields: {
-            jobCount: { $size: '$companyJobs' }
-         }
-      },
-      {
-         $sort: { jobCount: -1 }
-      },
-      {
-         $project: {
-            password: 0,
-            companyJobs: 0
-         }
-      }
-   ]).toArray()
-   res.send(users);
-})
-app.get('/', (req, res) => {
-   res.send('server is running on jobportal ai')
-})
-
+    
     await userCollection.updateOne({ email }, updateQuery);
 
     if (user.loginAttempts >= 2) {
@@ -581,6 +447,222 @@ app.get('/', (req, res) => {
     }
   }
 });
+
+    // category job
+    app.get('/category-job/:title', async (req, res) => {
+      const { title } = req.params;
+      const query = { category: title };
+      const result = await jobCollection.find(query).toArray()
+      res.send(result)
+    })
+    //Apply Job Post API
+    app.post('/applyJob/:email', async (req, res) => {
+      const data = req.body
+      const email = req.params.email
+      const jobId = req.query.jobId
+      const query = { jobSeekerEmail: email, jobId: jobId }
+      const isExist = await applyJobCollection.findOne(query)
+      if (isExist) {
+        return res.send('This Job All Ready Save Your Wishlist')
+      }
+      const result = await applyJobCollection.insertOne(data)
+      res.send(result)
+    })
+    // Get All Apply Job A Specific Job Seeker email
+    app.get('/applyJob/:email', async (req, res) => {
+      const email = req.params.email
+      const query = { jobSeekerEmail: email }
+      const result = await applyJobCollection.find(query).toArray()
+      res.send(result)
+    })
+    // Get All Apply Job A Specific Job Seeker email
+    app.get('/applyJob/:email', async (req, res) => {
+      const email = req.params.email
+      const query = { jobSeekerEmail: email }
+      const result = await applyJobCollection.find(query).toArray()
+      res.send(result)
+    })
+    // Get data A Specific Job Seeker apply id
+    app.get('/single/Candidate/data/:id', async (req, res) => {
+      const id = req.params.id
+      const query = { _id: new ObjectId(id) }
+      const result = await applyJobCollection.findOne(query)
+      res.send(result)
+    })
+    //Job Seeker Apply any job and applyCount update 
+    app.patch('/updateApplyCount/:id', async (req, res) => {
+      const id = req.params.id
+      const filter = { _id: id }
+      const update = {
+        $inc: {
+          applyCandidate: 1
+        }
+      }
+      const result = await jobCollection.updateOne(filter, update)
+      res.send(result)
+    })
+
+    //Specific job all candidates data get api
+    app.get('/singleJob/all/Candidates/:id', async (req, res) => {
+      const id = req.params.id
+      const query = { jobId: id }
+      const result = await applyJobCollection.find(query).toArray()
+      res.send(result)
+    })
+    //get all hired candidates  A Specific employer
+    app.get('/hired/all/Candidates/:email', async (req, res) => {
+      const email = req.params.email
+      const query = { companyEmail: email }
+      const result = await applyJobCollection.find(query).toArray()
+      res.send(result)
+    })
+    // Candidate Listed API
+    app.patch('/listed/candidate/:id', async (req, res) => {
+      const id = req.params.id
+      const filter = { _id: new ObjectId(id) }
+      const update = {
+        $set: {
+          status: 'listed'
+        }
+      }
+      const result = await applyJobCollection.updateOne(filter, update)
+      res.send(result)
+    })
+    // Candidate Reject API
+    app.patch('/reject/candidate/:id', async (req, res) => {
+      const id = req.params.id
+      const filter = { _id: new ObjectId(id) }
+      const update = {
+        $set: {
+          status: 'reject'
+        }
+      }
+      const result = await applyJobCollection.updateOne(filter, update)
+      res.send(result)
+    })
+    // Candidate Hired API
+    app.patch('/hired/candidate/:id', async (req, res) => {
+      const id = req.params.id
+      const filter = { _id: new ObjectId(id) }
+      const update = {
+        $set: {
+          status: 'hired'
+        }
+      }
+      const result = await applyJobCollection.updateOne(filter, update)
+      res.send(result)
+    })
+    // Post pending contact API
+    app.post('/contact/request', async (req, res) => {
+      const data = req.body
+      const result = await contactCollection.insertOne(data)
+      res.send(result)
+    })
+    // Get All Pending contact
+    app.get('/contact/request', async (req, res) => {
+      const result = await contactCollection.find().toArray()
+      res.send(result)
+    })
+    // After Contact And delete this data
+    app.delete('/delete/contact/request/:id', async (req, res) => {
+      const id = req.params.id
+      const query = { _id: new ObjectId(id) }
+      const result = await contactCollection.deleteOne(query)
+      res.send(result)
+    })
+    // Post pending Review API
+    app.post('/pendingReview', async (req, res) => {
+      const data = req.body
+      const result = await pendingReviewCollection.insertOne(data)
+      res.send(result)
+    })
+    // Get All Pending Review 
+    app.get('/pendingReview', async (req, res) => {
+      const result = await pendingReviewCollection.find().toArray()
+      res.send(result)
+    })
+    // Post verified Review API
+    app.post('/verifiedReview', async (req, res) => {
+      const data = req.body
+      const result = await verifiedReviewCollection.insertOne(data)
+      res.send(result)
+    })
+    // Get All verified Review 
+    app.get('/verifiedReview', async (req, res) => {
+      const result = await verifiedReviewCollection.find().toArray()
+      res.send(result)
+    })
+    // Update Review Status
+    app.patch('/verified/review/status/:id', async (req, res) => {
+      const id = req.params.id
+      const filter = { _id: new ObjectId(id) }
+      const update = {
+        $set: {
+          status: 'verified'
+        }
+      }
+      const result = await verifiedReviewCollection.updateOne(filter, update)
+      res.send(result)
+    })
+    // Delete verified Review (email)
+    app.delete('/review/delete/:email', async (req, res) => {
+      const email = req.params.email
+      const reviews = await verifiedReviewCollection.find({ email: email }).sort({ reviewTime: -1 }).toArray();
+      if (reviews.length > 1) {
+        const idsToDelete = reviews.slice(1).map(review => review._id);
+        const query = { _id: { $in: idsToDelete } }
+        const result = await verifiedReviewCollection.deleteMany(query)
+        res.send(result)
+      }
+    })
+    // Delete verified Review (id)
+    app.delete('/single/review/delete/:id', async (req, res) => {
+      const id = req.params.id
+      const query = { _id: new ObjectId(id) }
+      const result = await pendingReviewCollection.deleteOne(query)
+      res.send(result)
+    })
+    // get all Users
+    app.get("/users", async (req, res) => {
+      try {
+        const users = await userCollection.find().toArray();
+        res.send(users);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch users", error });
+      }
+    });
+    // get all employers
+    app.get('/employers', async (req, res) => {
+      const users = await userCollection.aggregate([
+        {
+          $match: { role: 'Employer' }
+        },
+        {
+          $lookup: {
+            from: 'allJob',
+            localField: 'email',
+            foreignField: 'email',
+            as: 'companyJobs'
+          }
+        },
+        {
+          $addFields: {
+            jobCount: { $size: '$companyJobs' }
+          }
+        },
+        {
+          $sort: { jobCount: -1 }
+        },
+        {
+          $project: {
+            password: 0,
+            companyJobs: 0
+          }
+        }
+      ]).toArray()
+      res.send(users);
+    })
+    
 
 // New job post to pending collection
 app.post("/pendingJob", async (req, res) => {
