@@ -242,13 +242,7 @@ app.post("/wrong-password", async (req, res) => {
     }
   }
 });
-// Suggest job api
-app.get('/Ai/JobData', async (req, res) => {
-  const skill = req.query.skill;
-  const skills = JSON.parse(skill)
-  const result = await jobCollection.find({ skill: { $in: skills } }).toArray()
-  res.send(result)
-})
+
 // category job
 app.get('/category-job/:title', async (req, res) => {
   const { title } = req.params;
