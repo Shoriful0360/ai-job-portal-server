@@ -35,7 +35,8 @@ const {
   pendingReviewCollection,
   contactCollection,
   verifiedReviewCollection,
-  messageCollection
+  messageCollection,
+  resumeCollection
 } = require("./mongodb/connect");
 
 // Export or use io/server/app as needed below
@@ -93,6 +94,130 @@ app.get("/messages", async (req, res) => {
 
   res.send(messages);
 });
+
+// POST: Save Resume Data
+app.post('/resume/:email', async (req, res) => {
+  const email = req.params.email;
+  const resumeData = req.body;
+
+  try {
+    const existing = await resumeCollection.findOne({ email, title: resumeData.title });
+
+    if (existing) {
+      const result = await resumeCollection.updateOne(
+        { email, title: resumeData.title },
+        { $set: resumeData }
+      );
+      res.send(result);
+    } else {
+      const result = await resumeCollection.insertOne({ email, ...resumeData });
+      res.send(result);
+    }
+  } catch (error) {
+    res.status(500).send({ message: 'Error saving resume', error });
+  }
+});
+
+// GET: Download Resume as PDF
+app.get('/resume/download/:id', async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    const resume = await resumeCollection.findOne({ _id: new ObjectId(id) });
+
+    if (!resume) return res.status(404).send('Resume not found');
+
+    const doc = new PDFDocument();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="resume-${resume._id}.pdf"`);
+
+    doc.pipe(res);
+
+    doc.fontSize(14).text(`Resume: ${resume.title}`, { align: 'center' });
+    doc.moveDown();
+
+    doc.fontSize(12).text(`Name: ${resume.fullName}`);
+    doc.text(`Email: ${resume.email}`);
+    doc.text(`Phone: ${resume.phone}`);
+    if (resume.linkedin) doc.text(`LinkedIn: ${resume.linkedin}`);
+    if (resume.address) doc.text(`Address: ${resume.address}`);
+    doc.moveDown();
+
+    doc.text(`Objective: ${resume.objective}`);
+    doc.moveDown();
+
+    doc.text(`Technical Skills: ${resume.skills?.technical}`);
+    doc.text(`Soft Skills: ${resume.skills?.soft}`);
+    doc.moveDown();
+
+    // Experience
+    doc.fontSize(12).text('Experience', { underline: true });
+    resume.experience?.forEach(exp => {
+      doc.fontSize(10).text(`Job Title: ${exp.jobTitle}`);
+      doc.text(`Company: ${exp.company}`);
+      doc.text(`Duration: ${exp.duration}`);
+      doc.text(`Description: ${exp.jobDescription}`);
+      doc.moveDown();
+    });
+
+    // Education
+    doc.fontSize(12).text('Education', { underline: true });
+    resume.education?.forEach(edu => {
+      doc.fontSize(10).text(`Degree: ${edu.degree}`);
+      doc.text(`University: ${edu.university}`);
+      doc.text(`Graduation Date: ${edu.graduationDate}`);
+      doc.text(`Relevant Courses: ${edu.relevantCourses}`);
+      doc.moveDown();
+    });
+
+    // Certifications
+    doc.fontSize(12).text('Certifications', { underline: true });
+    resume.certifications?.forEach(cert => {
+      doc.fontSize(10).text(`${cert.certificationName} - ${cert.issuingOrganization} (${cert.dateEarned})`);
+      doc.moveDown();
+    });
+
+    // Projects
+    doc.fontSize(14).text('Projects', { underline: true });
+    resume.projects?.forEach(project => {
+      doc.fontSize(12).text(`Title: ${project.title}`);
+      doc.text(`Technologies Used: ${project.technologiesUsed}`);
+      doc.text(`Duration: ${project.duration}`);
+      doc.text(`Description: ${project.description}`);
+      doc.moveDown();
+    });
+
+    // Awards
+    doc.fontSize(12).text('Awards', { underline: true });
+    resume.awards?.forEach(award => {
+      doc.fontSize(10).text(`${award.awardName} - ${award.issuingOrganization} (${award.date})`);
+      doc.moveDown();
+    });
+
+    // Languages
+    doc.fontSize(12).text('Languages', { underline: true });
+    resume.languages?.forEach(language => {
+      doc.fontSize(10).text(`${language.languageName} - Proficiency: ${language.proficiency}`);
+      doc.moveDown();
+    });
+
+    // Volunteer Experience
+    doc.fontSize(12).text('Volunteer Experience', { underline: true });
+    resume.volunteerExperience?.forEach(vol => {
+      doc.fontSize(10).text(`Position: ${vol.position}`);
+      doc.text(`Organization: ${vol.organization}`);
+      doc.text(`Duration: ${vol.duration}`);
+      doc.text(`Description: ${vol.description}`);
+      doc.moveDown();
+    });
+
+    doc.end();
+  } catch (error) {
+    res.status(500).send({ message: 'Error generating PDF', error });
+  }
+});
+
+
 
 app.get('/user-info/role/:email', async (req, res) => {
   const email = req.params.email;
