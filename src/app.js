@@ -49,7 +49,7 @@ app.get('/resume/download/:id', async (req, res) => {
 
     doc.pipe(res);
 
-    doc.fontSize(16).text(`Resume: ${resume.title}`, { align: 'center' });
+    doc.fontSize(14).text(`Resume: ${resume.title}`, { align: 'center' });
     doc.moveDown();
 
     doc.fontSize(12).text(`Name: ${resume.fullName}`);
@@ -67,9 +67,9 @@ app.get('/resume/download/:id', async (req, res) => {
     doc.moveDown();
 
     // Experience
-    doc.fontSize(14).text('Experience', { underline: true });
+    doc.fontSize(12).text('Experience', { underline: true });
     resume.experience?.forEach(exp => {
-      doc.fontSize(12).text(`Job Title: ${exp.jobTitle}`);
+      doc.fontSize(10).text(`Job Title: ${exp.jobTitle}`);
       doc.text(`Company: ${exp.company}`);
       doc.text(`Duration: ${exp.duration}`);
       doc.text(`Description: ${exp.jobDescription}`);
@@ -77,9 +77,9 @@ app.get('/resume/download/:id', async (req, res) => {
     });
 
     // Education
-    doc.fontSize(14).text('Education', { underline: true });
+    doc.fontSize(12).text('Education', { underline: true });
     resume.education?.forEach(edu => {
-      doc.fontSize(12).text(`Degree: ${edu.degree}`);
+      doc.fontSize(10).text(`Degree: ${edu.degree}`);
       doc.text(`University: ${edu.university}`);
       doc.text(`Graduation Date: ${edu.graduationDate}`);
       doc.text(`Relevant Courses: ${edu.relevantCourses}`);
@@ -87,9 +87,9 @@ app.get('/resume/download/:id', async (req, res) => {
     });
 
     // Certifications
-    doc.fontSize(14).text('Certifications', { underline: true });
+    doc.fontSize(12).text('Certifications', { underline: true });
     resume.certifications?.forEach(cert => {
-      doc.fontSize(12).text(`${cert.certificationName} - ${cert.issuingOrganization} (${cert.dateEarned})`);
+      doc.fontSize(10).text(`${cert.certificationName} - ${cert.issuingOrganization} (${cert.dateEarned})`);
       doc.moveDown();
     });
 
@@ -104,23 +104,23 @@ app.get('/resume/download/:id', async (req, res) => {
     });
 
     // Awards
-    doc.fontSize(14).text('Awards', { underline: true });
+    doc.fontSize(12).text('Awards', { underline: true });
     resume.awards?.forEach(award => {
-      doc.fontSize(12).text(`${award.awardName} - ${award.issuingOrganization} (${award.date})`);
+      doc.fontSize(10).text(`${award.awardName} - ${award.issuingOrganization} (${award.date})`);
       doc.moveDown();
     });
 
     // Languages
-    doc.fontSize(14).text('Languages', { underline: true });
+    doc.fontSize(12).text('Languages', { underline: true });
     resume.languages?.forEach(language => {
-      doc.fontSize(12).text(`${language.languageName} - Proficiency: ${language.proficiency}`);
+      doc.fontSize(10).text(`${language.languageName} - Proficiency: ${language.proficiency}`);
       doc.moveDown();
     });
 
     // Volunteer Experience
-    doc.fontSize(14).text('Volunteer Experience', { underline: true });
+    doc.fontSize(12).text('Volunteer Experience', { underline: true });
     resume.volunteerExperience?.forEach(vol => {
-      doc.fontSize(12).text(`Position: ${vol.position}`);
+      doc.fontSize(10).text(`Position: ${vol.position}`);
       doc.text(`Organization: ${vol.organization}`);
       doc.text(`Duration: ${vol.duration}`);
       doc.text(`Description: ${vol.description}`);
