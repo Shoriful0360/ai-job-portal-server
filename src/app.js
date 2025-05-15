@@ -42,57 +42,68 @@ const {
 
 // socekt api
 // realtime communication
-io.on("connection", (socket) => {
-  console.log("connected", socket.id);
+const users = {};
 
-  // Load previous messages when a user connects
-  socket.on("loadMessages", async ({ sender, receiver }) => {
-    try {
-      const messages = await messageCollection.find({
-        $or: [
-          { sender, receiver },
-          { sender: receiver, receiver: sender }
-        ]
-      }).sort({ timeStamp: 1 }).toArray();
-      socket.emit("messagesLoaded", messages);
-    } catch (error) {
-      console.error('Error loading messages:', error);
+io.on('connection', (socket) => {
+  socket.on('register', (email) => {
+    users[email] = socket.id;
+  });
+
+  socket.on('private_message', async ({ senderEmail, receiverEmail, message }) => {
+    
+    const msgData = {
+      senderEmail,
+      receiverEmail,
+      message,
+      timeStamp: new Date(),
+    };
+
+    await messageCollection.insertOne(msgData);
+
+    const receiverSocketId = users[receiverEmail];
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit('private_message', msgData);
     }
   });
 
-  socket.on("chat", async chat => {
-    try {
-      const newMessage = {
-        ...chat,
-        timeStamp: new Date()
-      };
-      await messageCollection.insertOne(newMessage);
-      io.emit("newMessage", newMessage); // Send to all connected clients
-    } catch (error) {
-      console.error('Error saving chat:', error);
+  socket.on('disconnect', () => {
+    for (let email in users) {
+      if (users[email] === socket.id) {
+        delete users[email];
+        break;
+      }
     }
-  });
-
-  socket.on("disconnect", () => {
-    console.log('disconnected', socket.id);
   });
 });
 
-app.get("/messages", async (req, res) => {
-  const { senderId, receiverId } = req.query;
-
+// API to fetch old messages
+app.get('/messages', async (req, res) => {
+  const { user1, user2 } = req.query;
+  console.log(user1,user2)
   const messages = await messageCollection
     .find({
       $or: [
-        { senderId, receiverId },
-        { senderId: receiverId, receiverId: senderId }
-      ]
+        { senderEmail: user1, receiverEmail: user2 },
+        { senderEmail: user2, receiverEmail: user1 },
+      ],
     })
-    .sort({ timestamp: 1 })
+    .sort({ timeStamp: 1 })
     .toArray();
-
-  res.send(messages);
+  res.json(messages);
 });
+
+// API to fetch all message user
+app.get('/all-message/:email',async(req,res)=>{
+  const email=req.params.email;
+  try{
+ const result=await messageCollection.find({senderEmail:email}).toArray()
+ const receiverEmails=[...new Set(result.map(m=>m.receiverEmail))]
+ const users=await userCollection.find({email:{$in:receiverEmails}}).project({name:1,photoUrl:1,email:1}).toArray()
+ res.send(users)
+  }catch(error){
+    res.status(500).json({message:"Internal Server Errror"})
+  }
+})
 
 app.get('/user-info/role/:email', async (req, res) => {
   const email = req.params.email;
@@ -855,4 +866,4 @@ app.get("/", (req, res) => {
   res.send("Server is running on jobportal ai");
 });
 
-module.exports = app;
+module.exports = server;
